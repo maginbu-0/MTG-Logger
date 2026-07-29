@@ -682,7 +682,6 @@ with tab_stats:
     color_stats = db.get_color_identity_stats()
     if color_stats:
         df_colors = pd.DataFrame([dict(row) for row in color_stats])
-        df_colors['win_rate'] = (df_colors['wins'] / df_colors['games_played']) * 100
         
         mana_icons = {'W': '☀️', 'U': '💧', 'B': '💀', 'R': '🔥', 'G': '🌳', 'C': '💎'}
         guild_names = {
@@ -695,23 +694,44 @@ with tab_stats:
             'WUBRG': '5-Color'
         }
         
-        def format_color_identity(color_raw):
+        # 1. Helper function to normalize color identity into canonical WUBRG order
+        def normalize_color_identity(color_raw):
             if not color_raw:
-                return "💎 Colorless"
+                return "C"
             wubrg_order = "WUBRG"
             sorted_chars = sorted(
                 str(color_raw).upper().strip(), 
                 key=lambda x: wubrg_order.find(x) if x in wubrg_order else 99
             )
-            clean_code = "".join(sorted_chars)
+            return "".join(sorted_chars)
+
+        # 2. Apply canonical normalization (e.g. 'RU' -> 'UR')
+        df_colors['canonical_color'] = df_colors['color_identity'].apply(normalize_color_identity)
+        
+        # 3. GROUP BY canonical color identity and aggregate totals across ALL decks
+        df_grouped_colors = df_colors.groupby('canonical_color', as_index=False).agg({
+            'games_played': 'sum',
+            'wins': 'sum'
+        })
+        
+        # 4. Calculate consolidated win rate
+        df_grouped_colors['win_rate'] = (df_grouped_colors['wins'] / df_grouped_colors['games_played']) * 100
+        
+        # 5. Format display name with emojis and guild/shard names
+        def format_color_identity(clean_code):
+            if clean_code == "C":
+                return "💎 Colorless"
             emojis = "".join([mana_icons.get(char, '') for char in clean_code])
             name = guild_names.get(clean_code, clean_code)
             return f"{emojis} {name}"
+            
+        df_grouped_colors['identity_display'] = df_grouped_colors['canonical_color'].apply(format_color_identity)
         
-        df_colors['identity_display'] = df_colors['color_identity'].apply(format_color_identity)
+        # Sort by Win Rate descending, then Games Played descending
+        df_grouped_colors = df_grouped_colors.sort_values(by=['win_rate', 'games_played'], ascending=[False, False])
         
         st.dataframe(
-            df_colors[['identity_display', 'games_played', 'wins', 'win_rate']],
+            df_grouped_colors[['identity_display', 'games_played', 'wins', 'win_rate']],
             column_config={
                 "identity_display": st.column_config.TextColumn("Color Identity"),
                 "games_played": st.column_config.NumberColumn("Played", format="%d"),
