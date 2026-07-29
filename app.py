@@ -371,6 +371,91 @@ if tab_players:
             else:
                 st.info("No logged matches found.")
 
+
+        # --- EXPANDER: UPGRADE / LINK DECK TO MOXFIELD ---
+        with st.expander("🔗 Upgrade Manual Deck to Moxfield", expanded=False):
+            st.markdown("Select a player and deck to sync or re-import from a Moxfield link:")
+            
+            players = db.fetch_players()
+            if players:
+                player_dict = {p['display_name']: p['player_id'] for p in players}
+                
+                # 1. Select Owner
+                selected_owner = st.selectbox(
+                    "Select Deck Owner", 
+                    list(player_dict.keys()), 
+                    index=None, 
+                    key="select_owner_upgrade"
+                )
+                
+                if selected_owner:
+                    owner_id = player_dict[selected_owner]
+                    user_decks = db.fetch_player_decks(owner_id)
+                    
+                    if user_decks:
+                        deck_options = {d['deck_name']: d['deck_id'] for d in user_decks}
+                        
+                        # 2. Select Deck to Upgrade
+                        selected_deck_name = st.selectbox(
+                            "Select Deck to Upgrade", 
+                            list(deck_options.keys()), 
+                            index=None, 
+                            key="select_deck_upgrade"
+                        )
+                        
+                        if selected_deck_name:
+                            selected_deck_id = deck_options[selected_deck_name]
+                            
+                            # 3. Moxfield URL Input
+                            mox_url_upgrade = st.text_input(
+                                "Moxfield Deck URL", 
+                                placeholder="https://www.moxfield.com/decks/...", 
+                                key="input_mox_upgrade"
+                            )
+                            
+                            if st.button("Sync Deck with Moxfield", type="primary", key="btn_sync_mox"):
+                                if not mox_url_upgrade:
+                                    st.error("Please paste a valid Moxfield URL.")
+                                else:
+                                    try:
+                                        deck_id_hash = mox_url_upgrade.strip().split('/')[-1]
+                                        headers = {
+                                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+                                            "Accept": "application/json, text/plain, */*",
+                                            "Accept-Language": "en-US,en;q=0.9",
+                                            "Referer": "https://www.moxfield.com/"
+                                        }
+                                        response = requests.get(f"https://api.moxfield.com/v2/decks/all/{deck_id_hash}", headers=headers)
+                                        
+                                        if response.status_code == 200:
+                                            data = response.json()
+                                            mox_deck_name = data.get("name", selected_deck_name)
+                                            commanders_dict = data.get("commanders", {})
+                                            
+                                            if not commanders_dict:
+                                                st.error("No commander found in this Moxfield deck.")
+                                            else:
+                                                commander_ids = []
+                                                for comm_name, comm_data in commanders_dict.items():
+                                                    colors = "".join(comm_data.get("card", {}).get("colors", []))
+                                                    if not colors:
+                                                        colors = "C"
+                                                    comm_id = db.get_or_create_commander(comm_name, colors)
+                                                    commander_ids.append(comm_id)
+                                                
+                                                # Update deck name & commanders in Supabase
+                                                db.update_deck_from_moxfield(selected_deck_id, mox_deck_name, commander_ids)
+                                                
+                                                st.toast(f"Updated '{mox_deck_name}'!", icon="🎉")
+                                                st.success(f"Successfully linked **{selected_deck_name}** to Moxfield!")
+                                                st.rerun()
+                                        else:
+                                            st.error(f"Failed to fetch deck from Moxfield (Error {response.status_code}).")
+                                    except Exception as e:
+                                        st.error(f"An error occurred: {e}")
+                    else:
+                        st.info("This player has no registered decks.")
+
 # ------------------------------------------------------------------------------
 # TAB: ANALYTICS (PUBLIC / ALL ROLES)
 # ------------------------------------------------------------------------------
