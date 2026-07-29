@@ -195,6 +195,10 @@ if tab_log:
                 placeholder="How did it end?"
             )
 
+            # --- INITIALIZE REMATCH/CLEAR FORM STATE ---
+            if "rematch_mode" not in st.session_state:
+                st.session_state.rematch_mode = False
+
             st.divider()
             
             # --- PLAYER COUNT SELECTOR ---
@@ -203,7 +207,7 @@ if tab_log:
                 num_players = st.selectbox(
                     "Number of Players",
                     options=[3, 4],
-                    index=1,  # Index 1 selects '4' as the default
+                    index=1,
                     help="Default is 4 players, but you can switch to 3 for a 3-player pod."
                 )
 
@@ -258,10 +262,25 @@ if tab_log:
                         "is_winner": is_winner
                     })
 
-            notes = st.text_input("Match Notes (Optional)", placeholder="e.g. Turn 6 Rhystic Study went unanswered")
-            submit_match = st.button("Save Game Log", use_container_width=True, type="primary")
+            win_condition = st.selectbox(
+                "Win Condition",
+                ["Combat Damage", "Infinite Combo", "Alternate Win-Con", "Commander Damage", "Scoop / Surrender"],
+                index=None,
+                placeholder="How did it end?",
+                key="input_win_condition"
+            )
 
-            if submit_match:
+            notes = st.text_input("Match Notes (Optional)", placeholder="e.g. Turn 6 Rhystic Study went unanswered", key="input_match_notes")
+            
+            # --- TWO ACTION BUTTONS ---
+            col_save1, col_save2 = st.columns(2)
+            with col_save1:
+                submit_match = st.button("💾 Save Game Log (Clear Form)", use_container_width=True, type="primary")
+            with col_save2:
+                rematch_submit = st.button("🔁 Save & Rematch (Keep Pod/Decks)", use_container_width=True, type="secondary")
+
+            # Shared Save Function
+            if submit_match or rematch_submit:
                 missing_players = any(p['player_id'] is None for p in participants_input)
                 missing_decks = any(p['deck_id'] is None for p in participants_input)
                 winners_count = sum(1 for p in participants_input if p['is_winner'])
@@ -284,14 +303,43 @@ if tab_log:
                     }
                     db.log_game_session(game_data, participants_input)
                     
-                    # RESET TIMER & TURN COUNTER FOR NEXT MATCH
+                    # 1. Reset Live Companion Timer & Turns
                     st.session_state.timer_running = False
                     st.session_state.timer_start_time = None
                     st.session_state.timer_elapsed_seconds = 0
                     st.session_state.live_turn_count = 1
-                    
-                    st.toast("Game successfully logged!", icon="🎉")
-                    st.success("Game successfully logged!")
+                    st.session_state["input_total_turns"] = 8
+                    st.session_state["input_duration"] = 45
+
+                    # 2. Handle Rematch vs. Full Clear
+                    if submit_match:
+                        # CLEAR ALL SEATS & FORM INPUTS
+                        for seat in range(1, 5):
+                            if f"seat_player_{seat}" in st.session_state:
+                                st.session_state[f"seat_player_{seat}"] = None
+                            if f"seat_deck_{seat}" in st.session_state:
+                                st.session_state[f"seat_deck_{seat}"] = None
+                            if f"seat_mull_{seat}" in st.session_state:
+                                st.session_state[f"seat_mull_{seat}"] = 0
+                            if f"seat_win_{seat}" in st.session_state:
+                                st.session_state[f"seat_win_{seat}"] = False
+                        
+                        st.session_state["input_win_condition"] = None
+                        st.session_state["input_match_notes"] = ""
+                        st.toast("Game logged & form cleared!", icon="🧹")
+
+                    elif rematch_submit:
+                        # KEEP PLAYERS & DECKS, RESET WINNER / MULLIGANS / NOTES ONLY
+                        for seat in range(1, 5):
+                            if f"seat_mull_{seat}" in st.session_state:
+                                st.session_state[f"seat_mull_{seat}"] = 0
+                            if f"seat_win_{seat}" in st.session_state:
+                                st.session_state[f"seat_win_{seat}"] = False
+                        
+                        st.session_state["input_win_condition"] = None
+                        st.session_state["input_match_notes"] = ""
+                        st.toast("Game logged! Ready for Rematch with same pod!", icon="🔁")
+
                     st.rerun()
 
 # ------------------------------------------------------------------------------
