@@ -31,5 +31,5 @@ Ensure you have **Python 3.10+** installed on your machine.
 
 ### 2. Clone the Repository
 ```bash
-git clone [https://github.com/YOUR_USERNAME/YOUR_REPOSITORY_NAME.git](https://github.com/YOUR_USERNAME/YOUR_REPOSITORY_NAME.git)
-cd YOUR_REPOSITORY_NAME
+git clone [https://github.com/maginbu-0/MTG-Logger.git](https://github.com/YOUR_USERNAME/maginbu-0/MTG-Logger.git)
+cd MTG-Logger
