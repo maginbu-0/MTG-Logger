@@ -15,13 +15,11 @@ st.title("🛡️ Commander Tracker")
 # ------------------------------------------------------------------------------
 # 1. PIN AUTHENTICATION (SIDEBAR)
 # ------------------------------------------------------------------------------
-# Retrieve PINs from Secrets (with fallback defaults)
 ADMIN_PIN = st.secrets.get("ADMIN_PIN", "1234")
 LOGGER_PIN = st.secrets.get("LOGGER_PIN", "5678")
 
-# Initialize session state for user role
 if "user_role" not in st.session_state:
-    st.session_state.user_role = "Viewer"  # Options: "Admin", "Logger", "Viewer"
+    st.session_state.user_role = "Viewer"
 
 with st.sidebar:
     st.header("🔒 Access Control")
@@ -50,24 +48,22 @@ with st.sidebar:
 # ------------------------------------------------------------------------------
 role = st.session_state.user_role
 
-# Build tabs based on authorization level
 if role == "Admin":
-    tab_log, tab_deck, tab_players, tab_stats = st.tabs([
-        "⚔️ Log Match", "➕ Add Deck", "👥 Manage Players", "📊 Analytics"
+    tab_log, tab_deck, tab_admin, tab_stats = st.tabs([
+        "⚔️ Log Match", "➕ Add Deck", "🛠️ Admin Controls", "📊 Analytics"
     ])
 elif role == "Logger":
     tab_log, tab_deck, tab_stats = st.tabs([
         "⚔️ Log Match", "➕ Add Deck", "📊 Analytics"
     ])
-    tab_players = None
+    tab_admin = None
 else:
-    # Viewer Mode: Only Analytics is active
     st.info("ℹ️ You are in Read-Only mode. Enter a PIN in the sidebar to log games or add decks.")
     tab_stats, = st.tabs(["📊 Analytics"])
-    tab_log, tab_deck, tab_players = None, None, None
+    tab_log, tab_deck, tab_admin = None, None, None
 
 # ------------------------------------------------------------------------------
-# TAB: LOG MATCH (ADMIN & LOGGER ONLY)
+# TAB 1: LOG MATCH (ADMIN & LOGGER ONLY)
 # ------------------------------------------------------------------------------
 if tab_log:
     with tab_log:
@@ -172,7 +168,7 @@ if tab_log:
                     st.success("Game successfully logged!")
 
 # ------------------------------------------------------------------------------
-# TAB: ADD DECK (ADMIN & LOGGER ONLY)
+# TAB 2: ADD DECK (ADMIN & LOGGER ONLY)
 # ------------------------------------------------------------------------------
 if tab_deck:
     with tab_deck:
@@ -223,7 +219,7 @@ if tab_deck:
                                         colors = "".join(comm_data.get("card", {}).get("colors", []))
                                         if not colors:
                                             colors = "C"
-                                        comm_id = db.get_or_create_commander(comm_name, colors)
+                                        comm_id = db.get_or_createcommander(comm_name, colors)
                                         commander_ids.append(comm_id)
                                     
                                     owner_id = player_dict[owner_name]
@@ -252,20 +248,24 @@ if tab_deck:
                         st.success(f"Deck '{manual_deck_name}' created manually!")
 
 # ------------------------------------------------------------------------------
-# TAB: MANAGE PLAYERS & MATCHES (ADMIN ONLY - PIN A)
+# TAB 3: ADMIN CONTROLS (ADMIN ONLY - PIN A)
 # ------------------------------------------------------------------------------
-if tab_players:
-    with tab_players:
+if tab_admin:
+    with tab_admin:
         st.subheader("🛠️ Admin Controls")
         
+        # Display persistent success banner if set on previous rerun
+        if "player_add_success_name" in st.session_state:
+            added_name = st.session_state.pop("player_add_success_name")
+            st.success(f"🎉 Player **{added_name}** was added successfully!")
+            st.toast(f"Added '{added_name}'!", icon="👤")
+
         # --- EXPANDER 1: ADD / REMOVE PLAYERS ---
         with st.expander("👤 Manage Players (Add / Delete)", expanded=False):
             col_add, col_del = st.columns(2)
             
             with col_add:
                 st.markdown("#### ➕ Add Player")
-                
-                # Use a clear state key for tracking success across reruns
                 new_player_name = st.text_input(
                     "Player Name", 
                     placeholder="e.g. John Doe", 
@@ -274,37 +274,21 @@ if tab_players:
 
                 if st.button("Add Player", type="primary", key="btn_add_player"):
                     clean_name = new_player_name.strip()
-                    
                     if not clean_name:
                         st.error("Please enter a player name first.")
                     else:
-                        # 1. Check if player already exists in local list to avoid duplicate errors
                         existing_players = [p['display_name'].lower() for p in db.fetch_players()]
-                        
                         if clean_name.lower() in existing_players:
                             st.error(f"Player '{clean_name}' already exists in the database!")
                         else:
                             try:
-                                # 2. Add to DB
                                 db.add_player(clean_name)
-                                
-                                # 3. Set a temporary success flag in session state
                                 st.session_state["player_add_success_name"] = clean_name
-                                
-                                # 4. Reset input box value cleanly by deleting key prior to rerun
                                 if "input_add_player_name" in st.session_state:
                                     del st.session_state["input_add_player_name"]
-                                
                                 st.rerun()
-                                
                             except Exception as e:
                                 st.error(f"Database error: {e}")
-
-                # Display persistent success message AFTER rerun if player was added
-                if "player_add_success_name" in st.session_state:
-                    added_name = st.session_state.pop("player_add_success_name")
-                    st.success(f"🎉 Player **{added_name}** was added successfully!")
-                    st.toast(f"Added '{added_name}'!", icon="👤")
 
             with col_del:
                 st.markdown("#### 🗑️ Remove Player")
@@ -322,71 +306,13 @@ if tab_players:
                         else:
                             st.error("Please select a player to remove.")
 
-        # --- EXPANDER 2: LIST PLAYERS & REGISTERED DECKS ---
-        with st.expander("🃏 View Registered Players & Decks", expanded=False):
-            all_decks = db.fetch_all_decks_with_owners()
-            if all_decks:
-                df_all_decks = pd.DataFrame([dict(row) for row in all_decks])
-                st.dataframe(
-                    df_all_decks[['owner_name', 'deck_name', 'commander_names']],
-                    column_config={
-                        "owner_name": st.column_config.TextColumn("Pilot / Owner"),
-                        "deck_name": st.column_config.TextColumn("Deck Name"),
-                        "commander_names": st.column_config.TextColumn("Commander(s)"),
-                    },
-                    hide_index=True,
-                    use_container_width=True
-                )
-            else:
-                st.info("No decks registered in the database yet.")
-
-        # --- EXPANDER 3: DELETE MATCH LOGS ---
-        with st.expander("🗑️ Match Management (Delete Matches)", expanded=False):
-            st.markdown("Select a game session to delete from database logs:")
-            recent_games = db.fetch_recent_games(limit=20)
-            
-            if recent_games:
-                # Format options cleanly for dropdown
-                game_options = {}
-                for g in recent_games:
-                    label = f"Game #{g['game_id']} | Turns: {g['total_turns']} | Win: {g['win_condition']} ({g['participants']})"
-                    game_options[label] = g['game_id']
-                
-                selected_game_label = st.selectbox("Select Match to Delete", list(game_options.keys()), index=None)
-                
-                if selected_game_label:
-                    game_to_delete_id = game_options[selected_game_label]
-                    
-                    # Safety check before deletion
-                    confirm_delete = st.checkbox(f"I understand this will permanently delete Game #{game_to_delete_id}", key="confirm_game_del")
-                    
-                    if st.button("⚠️ Delete Match Session", type="primary", key="btn_del_game"):
-                        if confirm_delete:
-                            db.delete_game_session(game_to_delete_id)
-                            st.toast(f"Game #{game_to_delete_id} deleted!", icon="🗑️")
-                            st.success(f"Successfully deleted Game #{game_to_delete_id}!")
-                            st.rerun()
-                        else:
-                            st.error("Please check the confirmation box first.")
-            else:
-                st.info("No logged matches found.")
-
-
-        # --- EXPANDER: UPGRADE / LINK DECK TO MOXFIELD ---
+        # --- EXPANDER 2: UPGRADE / LINK MANUAL DECK TO MOXFIELD ---
         with st.expander("🔗 Upgrade Manual Deck to Moxfield", expanded=False):
             st.markdown("Select a player and deck to sync or re-import from a Moxfield link:")
-            
             players = db.fetch_players()
             if players:
                 player_dict = {p['display_name']: p['player_id'] for p in players}
-                
-                # 1. Select Owner
-                selected_owner = st.selectbox(
-                    "Select Deck Owner", 
-                    list(player_dict.keys()), 
-                    index=None, 
-                    key="select_owner_upgrade"
-                )
+                selected_owner = st.selectbox("Select Deck Owner", list(player_dict.keys()), index=None, key="select_owner_upgrade")
                 
                 if selected_owner:
                     owner_id = player_dict[selected_owner]
@@ -394,24 +320,11 @@ if tab_players:
                     
                     if user_decks:
                         deck_options = {d['deck_name']: d['deck_id'] for d in user_decks}
-                        
-                        # 2. Select Deck to Upgrade
-                        selected_deck_name = st.selectbox(
-                            "Select Deck to Upgrade", 
-                            list(deck_options.keys()), 
-                            index=None, 
-                            key="select_deck_upgrade"
-                        )
+                        selected_deck_name = st.selectbox("Select Deck to Upgrade", list(deck_options.keys()), index=None, key="select_deck_upgrade")
                         
                         if selected_deck_name:
                             selected_deck_id = deck_options[selected_deck_name]
-                            
-                            # 3. Moxfield URL Input
-                            mox_url_upgrade = st.text_input(
-                                "Moxfield Deck URL", 
-                                placeholder="https://www.moxfield.com/decks/...", 
-                                key="input_mox_upgrade"
-                            )
+                            mox_url_upgrade = st.text_input("Moxfield Deck URL", placeholder="https://www.moxfield.com/decks/...", key="input_mox_upgrade")
                             
                             if st.button("Sync Deck with Moxfield", type="primary", key="btn_sync_mox"):
                                 if not mox_url_upgrade:
@@ -443,9 +356,7 @@ if tab_players:
                                                     comm_id = db.get_or_create_commander(comm_name, colors)
                                                     commander_ids.append(comm_id)
                                                 
-                                                # Update deck name & commanders in Supabase
                                                 db.update_deck_from_moxfield(selected_deck_id, mox_deck_name, commander_ids)
-                                                
                                                 st.toast(f"Updated '{mox_deck_name}'!", icon="🎉")
                                                 st.success(f"Successfully linked **{selected_deck_name}** to Moxfield!")
                                                 st.rerun()
@@ -456,8 +367,54 @@ if tab_players:
                     else:
                         st.info("This player has no registered decks.")
 
+        # --- EXPANDER 3: LIST PLAYERS & REGISTERED DECKS ---
+        with st.expander("🃏 View Registered Players & Decks", expanded=False):
+            all_decks = db.fetch_all_decks_with_owners()
+            if all_decks:
+                df_all_decks = pd.DataFrame([dict(row) for row in all_decks])
+                st.dataframe(
+                    df_all_decks[['owner_name', 'deck_name', 'commander_names']],
+                    column_config={
+                        "owner_name": st.column_config.TextColumn("Pilot / Owner"),
+                        "deck_name": st.column_config.TextColumn("Deck Name"),
+                        "commander_names": st.column_config.TextColumn("Commander(s)"),
+                    },
+                    hide_index=True,
+                    use_container_width=True
+                )
+            else:
+                st.info("No decks registered in the database yet.")
+
+        # --- EXPANDER 4: DELETE MATCH LOGS ---
+        with st.expander("🗑️ Match Management (Delete Matches)", expanded=False):
+            st.markdown("Select a game session to delete from database logs:")
+            recent_games = db.fetch_recent_games(limit=20)
+            
+            if recent_games:
+                game_options = {}
+                for g in recent_games:
+                    label = f"Game #{g['game_id']} | Turns: {g['total_turns']} | Win: {g['win_condition']} ({g['participants']})"
+                    game_options[label] = g['game_id']
+                
+                selected_game_label = st.selectbox("Select Match to Delete", list(game_options.keys()), index=None)
+                
+                if selected_game_label:
+                    game_to_delete_id = game_options[selected_game_label]
+                    confirm_delete = st.checkbox(f"I understand this will permanently delete Game #{game_to_delete_id}", key="confirm_game_del")
+                    
+                    if st.button("⚠️ Delete Match Session", type="primary", key="btn_del_game"):
+                        if confirm_delete:
+                            db.delete_game_session(game_to_delete_id)
+                            st.toast(f"Game #{game_to_delete_id} deleted!", icon="🗑️")
+                            st.success(f"Successfully deleted Game #{game_to_delete_id}!")
+                            st.rerun()
+                        else:
+                            st.error("Please check the confirmation box first.")
+            else:
+                st.info("No logged matches found.")
+
 # ------------------------------------------------------------------------------
-# TAB: ANALYTICS (PUBLIC / ALL ROLES)
+# TAB 4: ANALYTICS (PUBLIC / ALL ROLES)
 # ------------------------------------------------------------------------------
 with tab_stats:
     st.subheader("📊 Playgroup Operations & Metrics")
