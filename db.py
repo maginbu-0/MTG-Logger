@@ -212,7 +212,7 @@ def get_game_overview_stats():
 
 
 def add_player(display_name):
-    """Adds a new player to the database."""
+    """Adds a new player to the database safely."""
     query = "INSERT INTO players (display_name) VALUES (%s) RETURNING player_id;"
     with get_db() as conn:
         cur = conn.cursor()

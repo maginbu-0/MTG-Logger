@@ -264,15 +264,36 @@ if tab_players:
             
             with col_add:
                 st.markdown("#### ➕ Add Player")
-                new_player_name = st.text_input("Player Name", placeholder="e.g. John Doe", key="admin_add_player_input")
+                
+                # Initialize session state for text input if not present
+                if "new_player_input" not in st.session_state:
+                    st.session_state.new_player_input = ""
+
+                new_player_name = st.text_input(
+                    "Player Name", 
+                    placeholder="e.g. John Doe", 
+                    key="new_player_input"
+                )
+
                 if st.button("Add Player", type="primary", key="btn_add_player"):
-                    if new_player_name:
-                        db.add_player(new_player_name.strip())
-                        st.toast(f"Added '{new_player_name}'!", icon="👤")
-                        st.success(f"Player '{new_player_name}' added!")
-                        st.rerun()
+                    clean_name = new_player_name.strip()
+                    
+                    if not clean_name:
+                        st.error("Please enter a player name first.")
                     else:
-                        st.error("Please enter a name.")
+                        try:
+                            # Attempt insertion into Supabase
+                            db.add_player(clean_name)
+                            
+                            # SUCCESS: Clear the text box state, show toast & alert, then rerun
+                            st.session_state.new_player_input = ""
+                            st.toast(f"Added '{clean_name}' successfully!", icon="✅")
+                            st.success(f"Player **{clean_name}** was added to the database!")
+                            st.rerun()
+                            
+                        except Exception as e:
+                            # FAILURE: Do NOT clear session state, typed text stays in the box
+                            st.error(f"Failed to add player '{clean_name}'. It might already exist or a database error occurred.")
 
             with col_del:
                 st.markdown("#### 🗑️ Remove Player")
