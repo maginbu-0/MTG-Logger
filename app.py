@@ -265,14 +265,11 @@ if tab_players:
             with col_add:
                 st.markdown("#### ➕ Add Player")
                 
-                # Initialize session state for text input if not present
-                if "new_player_input" not in st.session_state:
-                    st.session_state.new_player_input = ""
-
+                # Use a clear state key for tracking success across reruns
                 new_player_name = st.text_input(
                     "Player Name", 
                     placeholder="e.g. John Doe", 
-                    key="new_player_input"
+                    key="input_add_player_name"
                 )
 
                 if st.button("Add Player", type="primary", key="btn_add_player"):
@@ -281,19 +278,33 @@ if tab_players:
                     if not clean_name:
                         st.error("Please enter a player name first.")
                     else:
-                        try:
-                            # Attempt insertion into Supabase
-                            db.add_player(clean_name)
-                            
-                            # SUCCESS: Clear the text box state, show toast & alert, then rerun
-                            st.session_state.new_player_input = ""
-                            st.toast(f"Added '{clean_name}' successfully!", icon="✅")
-                            st.success(f"Player **{clean_name}** was added to the database!")
-                            st.rerun()
-                            
-                        except Exception as e:
-                            # FAILURE: Do NOT clear session state, typed text stays in the box
-                            st.error(f"Failed to add player '{clean_name}'. It might already exist or a database error occurred.")
+                        # 1. Check if player already exists in local list to avoid duplicate errors
+                        existing_players = [p['display_name'].lower() for p in db.fetch_players()]
+                        
+                        if clean_name.lower() in existing_players:
+                            st.error(f"Player '{clean_name}' already exists in the database!")
+                        else:
+                            try:
+                                # 2. Add to DB
+                                db.add_player(clean_name)
+                                
+                                # 3. Set a temporary success flag in session state
+                                st.session_state["player_add_success_name"] = clean_name
+                                
+                                # 4. Reset input box value cleanly by deleting key prior to rerun
+                                if "input_add_player_name" in st.session_state:
+                                    del st.session_state["input_add_player_name"]
+                                
+                                st.rerun()
+                                
+                            except Exception as e:
+                                st.error(f"Database error: {e}")
+
+                # Display persistent success message AFTER rerun if player was added
+                if "player_add_success_name" in st.session_state:
+                    added_name = st.session_state.pop("player_add_success_name")
+                    st.success(f"🎉 Player **{added_name}** was added successfully!")
+                    st.toast(f"Added '{added_name}'!", icon="👤")
 
             with col_del:
                 st.markdown("#### 🗑️ Remove Player")
