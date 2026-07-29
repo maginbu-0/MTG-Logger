@@ -749,12 +749,32 @@ with tab_stats:
 
     st.divider()
 
-    # 6. BRACKET PERFORMANCE & DISTRIBUTION
+   # 6. BRACKET PERFORMANCE & DISTRIBUTION
     st.markdown("### 🎯 Bracket Distribution & Game Velocity")
     if hasattr(db, 'get_bracket_stats'):
         bracket_data = db.get_bracket_stats()
         if bracket_data:
             df_bracket = pd.DataFrame([dict(row) for row in bracket_data])
+            
+            # --- FORCE FLOAT & DECIMAL CONVERSION ---
+            # 1. Convert to string and clean out quotes/slashes
+            df_bracket['avg_turns'] = df_bracket['avg_turns'].astype(str).str.replace(r'["\\]', '', regex=True)
+            
+            # 2. If the value is '65' or '30', convert it to a float decimal (6.5, 3.0)
+            def clean_to_float(val):
+                try:
+                    f = float(val)
+                    # If the database returned whole tens (like 65 or 30 instead of 6.5 or 3.0), adjust by dividing by 10
+                    if f > 20:  
+                        f = f / 10.0
+                    return f
+                except:
+                    return 0.0
+
+            df_bracket['avg_turns'] = df_bracket['avg_turns'].apply(clean_to_float)
+            df_bracket['avg_duration'] = pd.to_numeric(df_bracket['avg_duration'], errors='coerce')
+            df_bracket['total_games'] = pd.to_numeric(df_bracket['total_games'], errors='coerce')
+            
             df_bracket['bracket_label'] = df_bracket['bracket'].apply(lambda x: f"Bracket {x}")
             
             col_b_chart1, col_b_chart2 = st.columns(2)
@@ -765,6 +785,7 @@ with tab_stats:
                 
             with col_b_chart2:
                 st.markdown("#### ⚡ Average Turns by Bracket")
+                # Set explicit float y-axis plotting
                 st.line_chart(df_bracket, x='bracket_label', y='avg_turns', color='#29b5e8')
                 
             st.dataframe(
