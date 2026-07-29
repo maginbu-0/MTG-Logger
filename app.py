@@ -197,6 +197,9 @@ if tab_deck:
                         st.error("Please paste a Moxfield URL.")
                     else:
                         try:
+                            # 1. Get owner_id from the selected owner_name
+                            owner_id = player_dict[owner_name]
+                            
                             deck_id = mox_url.strip().split('/')[-1]
                             headers = {
                                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
@@ -226,8 +229,11 @@ if tab_deck:
                                         comm_id = db.get_or_create_commander(comm_name, color_str)
                                         commander_ids.append(comm_id)
                                     
-                                    # Save deck with list of commander IDs
+                                    # 2. Save deck using defined owner_id
                                     db.create_deck(owner_id, deck_name, commander_ids)
+                                    st.success(f"Successfully imported **{deck_name}**!")
+                                    st.balloons()
+                                    st.rerun()
 
                             else:
                                 st.error(f"Failed to fetch deck from Moxfield (Error {response.status_code}).")
