@@ -596,13 +596,38 @@ with tab_stats:
         avg_duration = round(overview_df['avg_duration'].mean(), 0)
 
     # 4-Metric Grid
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Total Matches Logged", total_games_played)
-        st.metric("Avg Turn Count", f"Turn {avg_turns}" if avg_turns else "N/A")
+        total_turns = st.number_input(
+            "Total Turns", 
+            min_value=1, 
+            max_value=50, 
+            key="input_total_turns"
+        )
     with col2:
-        st.metric("Total Decks Registered", total_registered_decks)
-        st.metric("Avg Game Length", f"{int(avg_duration)} mins" if avg_duration else "N/A")
+        duration = st.number_input(
+            "Duration (mins)", 
+            min_value=1, 
+            max_value=500, 
+            key="input_duration"
+        )
+    with col3:
+        bracket_level = st.selectbox(
+            "Game Bracket",
+            options=[1, 2, 3, 4, 5],
+            index=2,  # Defaults to Bracket 3
+            help="Bracket 1: Precon/Exhibition | Bracket 2: Low-Mid | Bracket 3: High/Optimized | Bracket 4: Very High | Bracket 5: cEDH",
+            key="input_bracket"
+        )
+
+    # ... inside submit_match block ...
+    game_data = {
+        "total_turns": total_turns,
+        "duration_minutes": duration,
+        "win_condition": win_condition,
+        "notes": notes,
+        "bracket": bracket_level
+    }
     
     st.divider()
 

@@ -93,34 +93,33 @@ def create_deck(player_id, deck_name, commander_ids):
 
 
 def log_game_session(game_data, participants):
+    """Logs a new game session including turn count, duration, win con, notes, and power bracket."""
+    query_game = """
+        INSERT INTO games (total_turns, duration_minutes, win_condition, notes, bracket) 
+        VALUES (%s, %s, %s, %s, %s) 
+        RETURNING game_id;
+    """
+    query_participant = """
+        INSERT INTO game_participants (game_id, seat_position, player_id, deck_id, mulligan_count, is_winner)
+        VALUES (%s, %s, %s, %s, %s, %s);
+    """
     with get_db() as conn:
         cur = conn.cursor()
-        
-        # Insert game match header and use RETURNING game_id
-        cur.execute("""
-            INSERT INTO games (total_turns, duration_minutes, win_condition, notes)
-            VALUES (%s, %s, %s, %s)
-            RETURNING game_id;
-        """, (
+        cur.execute(query_game, (
             game_data['total_turns'],
             game_data['duration_minutes'],
             game_data['win_condition'],
-            game_data.get('notes', '')
+            game_data['notes'],
+            game_data['bracket']
         ))
-        
         game_id = cur.fetchone()['game_id']
-
-        # Insert granular participant results
+        
         for p in participants:
-            cur.execute("""
-                INSERT INTO game_participants (
-                    game_id, player_id, deck_id, seat_position, mulligan_count, is_winner
-                ) VALUES (%s, %s, %s, %s, %s, %s);
-            """, (
+            cur.execute(query_participant, (
                 game_id,
+                p['seat_position'],
                 p['player_id'],
                 p['deck_id'],
-                p['seat_position'],
                 p['mulligan_count'],
                 p['is_winner']
             ))
@@ -347,6 +346,27 @@ def get_all_deck_performance_stats():
         LEFT JOIN game_participants gp ON d.deck_id = gp.deck_id
         GROUP BY d.deck_id, d.deck_name, p.display_name
         ORDER BY games_played DESC, wins DESC, d.deck_name ASC;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        return cur.fetchall()
+
+
+
+
+def get_bracket_stats():
+    """Fetches total games played and average turn counts grouped by power bracket."""
+    query = """
+        SELECT 
+            bracket,
+            COUNT(*) AS total_games,
+            ROUND(AVG(total_turns), 1) AS avg_turns,
+            ROUND(AVG(duration_minutes), 0) AS avg_duration
+        FROM games
+        WHERE bracket IS NOT NULL
+        GROUP BY bracket
+        ORDER BY bracket ASC;
     """
     with get_db() as conn:
         cur = conn.cursor()
