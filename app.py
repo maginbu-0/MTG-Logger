@@ -786,7 +786,7 @@ with tab_stats:
             with col_b_chart2:
                 st.markdown("#### ⚡ Average Turns by Bracket")
                 # Set explicit float y-axis plotting
-                st.line_chart(df_bracket, x='bracket_label', y='avg_turns', color='#29b5e8')
+                st.bar_chart(df_bracket, x='bracket_label', y='avg_turns', color='#29b5e8')
                 
             st.dataframe(
                 df_bracket[['bracket_label', 'total_games', 'avg_turns', 'avg_duration']],
