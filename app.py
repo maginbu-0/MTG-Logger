@@ -164,7 +164,7 @@ if tab_log:
             player_dict = {p['display_name']: p['player_id'] for p in players}
             player_names = list(player_dict.keys())
 
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
                 total_turns = st.number_input(
                     "Total Turns", 
@@ -184,10 +184,31 @@ if tab_log:
                     "Game Bracket",
                     options=[1, 2, 3, 4, 5],
                     index=2,
-                    help="Bracket 1: Precon/Exhibition | Bracket 2: Low-Mid | Bracket 3: High/Optimized | Bracket 4: Very High | Bracket 5: cEDH",
+                    help="Bracket 1: Precon | Bracket 2: Low-Mid | Bracket 3: High/Optimized | Bracket 4: Very High | Bracket 5: cEDH",
                     key="input_bracket"
                 )
+            with col4:
+                game_medium = st.selectbox(
+                    "Platform / Medium",
+                    options=["In Person 🃏", "Convoke 💻", "SpellTable 📹"],
+                    index=0,  # Defaults to In Person
+                    key="input_medium"
+                )
 
+            # ... inside save block ...
+            game_data = {
+                "total_turns": total_turns,
+                "duration_minutes": duration,
+                "win_condition": win_condition,
+                "notes": notes,
+                "bracket": bracket_level,
+                "medium": game_medium
+            }
+
+            # Add "input_medium" to keys_to_delete when resetting session state:
+            keys_to_delete = ["input_total_turns", "input_duration", "input_bracket", "input_medium", "input_win_condition", "input_match_notes"]
+
+            
             win_condition = st.selectbox(
                 "Win Condition",
                 ["Combat Damage", "Infinite Combo", "Alternate Win-Con", "Commander Damage", "Scoop / Surrender"],

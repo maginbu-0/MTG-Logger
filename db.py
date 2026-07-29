@@ -93,10 +93,10 @@ def create_deck(player_id, deck_name, commander_ids):
 
 
 def log_game_session(game_data, participants):
-    """Logs a new game session including turn count, duration, win con, notes, and power bracket."""
+    """Logs a game session including turn count, duration, win con, notes, bracket, and medium."""
     query_game = """
-        INSERT INTO games (total_turns, duration_minutes, win_condition, notes, bracket) 
-        VALUES (%s, %s, %s, %s, %s) 
+        INSERT INTO games (total_turns, duration_minutes, win_condition, notes, bracket, medium) 
+        VALUES (%s, %s, %s, %s, %s, %s) 
         RETURNING game_id;
     """
     query_participant = """
@@ -110,7 +110,8 @@ def log_game_session(game_data, participants):
             game_data['duration_minutes'],
             game_data['win_condition'],
             game_data['notes'],
-            game_data['bracket']
+            game_data['bracket'],
+            game_data['medium']
         ))
         game_id = cur.fetchone()['game_id']
         
@@ -123,7 +124,7 @@ def log_game_session(game_data, participants):
                 p['mulligan_count'],
                 p['is_winner']
             ))
-            
+
     return game_id
 
 def get_or_create_commander(name, color_identity="Unknown"):
@@ -367,6 +368,23 @@ def get_bracket_stats():
         WHERE bracket IS NOT NULL
         GROUP BY bracket
         ORDER BY bracket ASC;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        return cur.fetchall()
+
+
+def get_medium_stats():
+    """Fetches total games played and average duration grouped by platform medium."""
+    query = """
+        SELECT 
+            COALESCE(medium, 'In Person') AS medium,
+            COUNT(*) AS total_games,
+            ROUND(AVG(duration_minutes)::numeric, 0) AS avg_duration
+        FROM games
+        GROUP BY COALESCE(medium, 'In Person')
+        ORDER BY total_games DESC;
     """
     with get_db() as conn:
         cur = conn.cursor()
