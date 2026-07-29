@@ -262,14 +262,6 @@ if tab_log:
                         "is_winner": is_winner
                     })
 
-            win_condition = st.selectbox(
-                "Win Condition",
-                ["Combat Damage", "Infinite Combo", "Alternate Win-Con", "Commander Damage", "Scoop / Surrender"],
-                index=None,
-                placeholder="How did it end?",
-                key="input_win_condition"
-            )
-
             notes = st.text_input("Match Notes (Optional)", placeholder="e.g. Turn 6 Rhystic Study went unanswered", key="input_match_notes")
             
             # --- TWO ACTION BUTTONS ---
