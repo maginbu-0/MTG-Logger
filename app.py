@@ -200,11 +200,10 @@ if tab_log:
             # --- PLAYER COUNT SELECTOR ---
             col_p1, col_p2 = st.columns([1, 2])
             with col_p1:
-                num_players = st.radio(
+                num_players = st.selectbox(
                     "Number of Players",
-                    options=[4, 3],
-                    horizontal=True,
-                    index=0,
+                    options=[3, 4],
+                    index=1,  # Index 1 selects '4' as the default
                     help="Default is 4 players, but you can switch to 3 for a 3-player pod."
                 )
 
