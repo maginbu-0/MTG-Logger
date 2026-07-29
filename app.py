@@ -300,37 +300,34 @@ if tab_log:
                     st.session_state.timer_start_time = None
                     st.session_state.timer_elapsed_seconds = 0
                     st.session_state.live_turn_count = 1
-                    st.session_state["input_total_turns"] = 8
-                    st.session_state["input_duration"] = 45
 
-                    # 2. Handle Rematch vs. Full Clear
+                    # 2. Safely delete active widget keys so Streamlit resets them on rerun
+                    keys_to_delete = ["input_total_turns", "input_duration", "input_win_condition", "input_match_notes"]
+
                     if submit_match:
-                        # CLEAR ALL SEATS & FORM INPUTS
+                        # Full Clear: delete seats + inputs
                         for seat in range(1, 5):
-                            if f"seat_player_{seat}" in st.session_state:
-                                st.session_state[f"seat_player_{seat}"] = None
-                            if f"seat_deck_{seat}" in st.session_state:
-                                st.session_state[f"seat_deck_{seat}"] = None
-                            if f"seat_mull_{seat}" in st.session_state:
-                                st.session_state[f"seat_mull_{seat}"] = 0
-                            if f"seat_win_{seat}" in st.session_state:
-                                st.session_state[f"seat_win_{seat}"] = False
-                        
-                        st.session_state["input_win_condition"] = None
-                        st.session_state["input_match_notes"] = ""
+                            keys_to_delete.extend([
+                                f"seat_player_{seat}",
+                                f"seat_deck_{seat}",
+                                f"seat_mull_{seat}",
+                                f"seat_win_{seat}"
+                            ])
                         st.toast("Game logged & form cleared!", icon="🧹")
 
                     elif rematch_submit:
-                        # KEEP PLAYERS & DECKS, RESET WINNER / MULLIGANS / NOTES ONLY
+                        # Rematch: keep seats/decks, only delete winner checkboxes, mulligans, win con & notes
                         for seat in range(1, 5):
-                            if f"seat_mull_{seat}" in st.session_state:
-                                st.session_state[f"seat_mull_{seat}"] = 0
-                            if f"seat_win_{seat}" in st.session_state:
-                                st.session_state[f"seat_win_{seat}"] = False
-                        
-                        st.session_state["input_win_condition"] = None
-                        st.session_state["input_match_notes"] = ""
+                            keys_to_delete.extend([
+                                f"seat_mull_{seat}",
+                                f"seat_win_{seat}"
+                            ])
                         st.toast("Game logged! Ready for Rematch with same pod!", icon="🔁")
+
+                    # Delete keys safely if they exist in session_state
+                    for k in keys_to_delete:
+                        if k in st.session_state:
+                            del st.session_state[k]
 
                     st.rerun()
 
