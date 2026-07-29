@@ -226,13 +226,22 @@ with tab_stats:
         df = pd.DataFrame([dict(row) for row in raw_stats])
         df['win_rate'] = (df['wins'] / df['games_played']) * 100
         
-        # High-Level KPIs
+        # High-Level Meta Metrics
         total_games_played = int(df['wins'].sum()) 
+        overview_data = db.get_game_overview_stats()
         
-        col1, col2, col3 = st.columns(3)
-        col1.metric(label="Total Matches Tracked", value=total_games_played)
-        col2.metric(label="Baseline Expected Win Rate", value="25.0%")
-        col3.metric(label="Active Players", value=len(df))
+        avg_turns = 0
+        avg_duration = 0
+        if overview_data:
+            overview_df = pd.DataFrame([dict(row) for row in overview_data])
+            avg_turns = round(overview_df['avg_turns'].mean(), 1)
+            avg_duration = round(overview_df['avg_duration'].mean(), 0)
+
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Total Matches", total_games_played)
+        col2.metric("Avg Game Length", f"{int(avg_duration)} mins" if avg_duration else "N/A")
+        col3.metric("Avg Turn Count", f"Turn {avg_turns}" if avg_turns else "N/A")
+        col4.metric("Active Players", len(df))
         
         st.divider()
         
@@ -256,33 +265,55 @@ with tab_stats:
             use_container_width=True
         )
 
-        # Deck Leaderboard
         st.divider()
-        st.markdown("### 🃏 Deck Leaderboard")
         
-        raw_deck_stats = db.get_deck_stats()
+        # Deck Leaderboard & Color Identity Side-by-Side
+        col_deck, col_color = st.columns([3, 2])
         
-        if not raw_deck_stats:
-            st.info("No deck data available yet.")
-        else:
-            df_decks = pd.DataFrame([dict(row) for row in raw_deck_stats])
-            df_decks['win_rate'] = (df_decks['wins'] / df_decks['games_played']) * 100
-            
-            st.dataframe(
-                df_decks[['deck_name', 'owner_name', 'games_played', 'wins', 'win_rate']],
-                column_config={
-                    "deck_name": st.column_config.TextColumn("Deck Name"),
-                    "owner_name": st.column_config.TextColumn("Pilot/Owner"),
-                    "games_played": st.column_config.NumberColumn("Matches Played", format="%d"),
-                    "wins": st.column_config.NumberColumn("Wins", format="%d"),
-                    "win_rate": st.column_config.ProgressColumn(
-                        "Win Rate (%)",
-                        help="Target equity in a 4-player pod is 25%",
-                        format="%.1f%%",
-                        min_value=0,
-                        max_value=100,
-                    ),
-                },
-                hide_index=True,
-                use_container_width=True
-            )
+        with col_deck:
+            st.markdown("### 🃏 Deck Performance")
+            raw_deck_stats = db.get_deck_stats()
+            if raw_deck_stats:
+                df_decks = pd.DataFrame([dict(row) for row in raw_deck_stats])
+                df_decks['win_rate'] = (df_decks['wins'] / df_decks['games_played']) * 100
+                
+                st.dataframe(
+                    df_decks[['deck_name', 'owner_name', 'games_played', 'wins', 'win_rate']],
+                    column_config={
+                        "deck_name": st.column_config.TextColumn("Deck"),
+                        "owner_name": st.column_config.TextColumn("Pilot"),
+                        "games_played": st.column_config.NumberColumn("Played", format="%d"),
+                        "wins": st.column_config.NumberColumn("Wins", format="%d"),
+                        "win_rate": st.column_config.ProgressColumn(
+                            "Win Rate (%)",
+                            format="%.1f%%",
+                            min_value=0,
+                            max_value=100,
+                        ),
+                    },
+                    hide_index=True,
+                    use_container_width=True
+                )
+
+        with col_color:
+            st.markdown("### 🎨 Color Identity Win Rates")
+            color_stats = db.get_color_identity_stats()
+            if color_stats:
+                df_colors = pd.DataFrame([dict(row) for row in color_stats])
+                df_colors['win_rate'] = (df_colors['wins'] / df_colors['games_played']) * 100
+                
+                st.dataframe(
+                    df_colors[['color_identity', 'games_played', 'win_rate']],
+                    column_config={
+                        "color_identity": st.column_config.TextColumn("Colors"),
+                        "games_played": st.column_config.NumberColumn("Played", format="%d"),
+                        "win_rate": st.column_config.ProgressColumn(
+                            "Win Rate",
+                            format="%.1f%%",
+                            min_value=0,
+                            max_value=100,
+                        ),
+                    },
+                    hide_index=True,
+                    use_container_width=True
+                )

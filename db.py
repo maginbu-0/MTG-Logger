@@ -172,3 +172,40 @@ def get_deck_stats():
         cur = conn.cursor()
         cur.execute(query)
         return cur.fetchall()
+
+
+def get_color_identity_stats():
+    """Aggregates win rates based on commander color identity."""
+    query = """
+        SELECT 
+            c.color_identity,
+            COUNT(gp.game_id) AS games_played,
+            SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END) AS wins
+        FROM commanders c
+        JOIN deck_commanders dc ON c.commander_id = dc.commander_id
+        JOIN decks d ON dc.deck_id = d.deck_id
+        JOIN game_participants gp ON d.deck_id = gp.deck_id
+        GROUP BY c.color_identity
+        HAVING COUNT(gp.game_id) > 0
+        ORDER BY wins DESC, games_played ASC;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        return cur.fetchall()
+
+def get_game_overview_stats():
+    """Calculates meta averages like duration, turns, and win condition counts."""
+    query = """
+        SELECT 
+            AVG(total_turns) AS avg_turns,
+            AVG(duration_minutes) AS avg_duration,
+            win_condition,
+            COUNT(*) as condition_count
+        FROM games
+        GROUP BY win_condition;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        return cur.fetchall()
