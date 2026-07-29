@@ -69,7 +69,7 @@ if tab_log:
     with tab_log:
         st.subheader("⚔️ Live Match Companion & Logger")
 
-        # 1. Initialize Live Match Session State Variables
+        # Initialize Live Match Session State Variables
         if "timer_running" not in st.session_state:
             st.session_state.timer_running = False
         if "timer_start_time" not in st.session_state:
@@ -79,19 +79,16 @@ if tab_log:
         if "live_turn_count" not in st.session_state:
             st.session_state.live_turn_count = 1
             
-        # 2. Live Time Calculation
+        # Live Time Calculation
         import time
         current_elapsed = st.session_state.timer_elapsed_seconds
         if st.session_state.timer_running and st.session_state.timer_start_time is not None:
             current_elapsed += int(time.time() - st.session_state.timer_start_time)
 
-        # ----------------------------------------------------------------------
-        # LIVE GAME CONTROLLER WIDGET
-        # ----------------------------------------------------------------------
+        # Live Companion Controller
         with st.expander("⏱️ Live Game Companion (Timer & Turn Counter)", expanded=True):
             col_timer, col_turns = st.columns(2)
             
-            # --- TIMER CONTROL ---
             with col_timer:
                 st.markdown("#### ⏳ Match Timer")
                 mins, secs = divmod(current_elapsed, 60)
@@ -121,7 +118,6 @@ if tab_log:
                         st.session_state.timer_elapsed_seconds = 0
                         st.rerun()
 
-            # --- TURN COUNTER ---
             with col_turns:
                 st.markdown("#### 🔄 Turn Counter")
                 st.markdown(f"<h2 style='text-align: center; margin: 0;'>Turn {st.session_state.live_turn_count}</h2>", unsafe_allow_html=True)
@@ -139,7 +135,6 @@ if tab_log:
 
             st.divider()
             
-            # --- END MATCH & AUTO-FILL BUTTON ---
             if st.button("🏁 End Match & Auto-Fill Form", type="primary", use_container_width=True, key="btn_end_match"):
                 if st.session_state.timer_running and st.session_state.timer_start_time is not None:
                     st.session_state.timer_elapsed_seconds += int(time.time() - st.session_state.timer_start_time)
@@ -148,18 +143,14 @@ if tab_log:
                 
                 final_minutes = max(1, round(st.session_state.timer_elapsed_seconds / 60))
                 
-                # Directly update widget session state keys
                 st.session_state["input_total_turns"] = int(st.session_state.live_turn_count)
                 st.session_state["input_duration"] = int(final_minutes)
                 
                 st.toast(f"Pushed {final_minutes} mins and Turn {st.session_state.live_turn_count} to form!", icon="⏱️")
                 st.rerun()
 
-if tab_log:
-    with tab_log:
         st.subheader("Match Details")
 
-        # Initialize widget state keys with default values if not already present
         if "input_total_turns" not in st.session_state:
             st.session_state["input_total_turns"] = 8
         if "input_duration" not in st.session_state:
@@ -173,7 +164,7 @@ if tab_log:
             player_dict = {p['display_name']: p['player_id'] for p in players}
             player_names = list(player_dict.keys())
 
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
             with col1:
                 total_turns = st.number_input(
                     "Total Turns", 
@@ -187,6 +178,14 @@ if tab_log:
                     min_value=1, 
                     max_value=500, 
                     key="input_duration"
+                )
+            with col3:
+                bracket_level = st.selectbox(
+                    "Game Bracket",
+                    options=[1, 2, 3, 4, 5],
+                    index=2,
+                    help="Bracket 1: Precon/Exhibition | Bracket 2: Low-Mid | Bracket 3: High/Optimized | Bracket 4: Very High | Bracket 5: cEDH",
+                    key="input_bracket"
                 )
 
             win_condition = st.selectbox(
@@ -268,40 +267,20 @@ if tab_log:
                         "total_turns": total_turns,
                         "duration_minutes": duration,
                         "win_condition": win_condition,
-                        "notes": notes
+                        "notes": notes,
+                        "bracket": bracket_level
                     }
-
-                    if submit_match:
-                        missing_players = any(p['player_id'] is None for p in participants_input)
-                        missing_decks = any(p['deck_id'] is None for p in participants_input)
-                        winners_count = sum(1 for p in participants_input if p['is_winner'])
-
-                    if not win_condition:
-                        st.error("Please select a Win Condition.")
-                    elif missing_players:
-                        st.error("Please select a player for all 4 seats.")
-                    elif missing_decks:
-                        st.error("Please select a deck for all 4 seats.")
-                    elif winners_count != 1:
-                        st.warning("Please mark exactly ONE player as the winner.")
-                    else:
-                        game_data = {
-                            "total_turns": total_turns,
-                            "duration_minutes": duration,
-                            "win_condition": win_condition,
-                            "notes": notes
-                        }
-                        db.log_game_session(game_data, participants_input)
-                        
-                        # RESET TIMER & TURN COUNTER FOR NEXT MATCH
-                        st.session_state.timer_running = False
-                        st.session_state.timer_start_time = None
-                        st.session_state.timer_elapsed_seconds = 0
-                        st.session_state.live_turn_count = 1
-                        
-                        st.toast("Game successfully logged!", icon="🎉")
-                        st.success("Game successfully logged!")
-                        st.rerun()
+                    db.log_game_session(game_data, participants_input)
+                    
+                    # RESET TIMER & TURN COUNTER FOR NEXT MATCH
+                    st.session_state.timer_running = False
+                    st.session_state.timer_start_time = None
+                    st.session_state.timer_elapsed_seconds = 0
+                    st.session_state.live_turn_count = 1
+                    
+                    st.toast("Game successfully logged!", icon="🎉")
+                    st.success("Game successfully logged!")
+                    st.rerun()
 
 # ------------------------------------------------------------------------------
 # TAB 2: ADD DECK (ADMIN & LOGGER ONLY)
@@ -333,9 +312,7 @@ if tab_deck:
                         st.error("Please paste a Moxfield URL.")
                     else:
                         try:
-                            # 1. Get owner_id from the selected owner_name
                             owner_id = player_dict[owner_name]
-                            
                             deck_id = mox_url.strip().split('/')[-1]
                             headers = {
                                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
@@ -354,18 +331,12 @@ if tab_deck:
                                     st.error("No commander found in this Moxfield deck.")
                                 else:
                                     commander_ids = []
-                                    
-                                    # Iterate through all commanders (handles single or partner pairs)
                                     for comm_name, comm_data in commanders_dict.items():
-                                        # Get raw colors list (e.g. ['W', 'B'])
                                         raw_colors = comm_data.get("card", {}).get("colors", [])
                                         color_str = "".join(raw_colors) if raw_colors else "C"
-                                        
-                                        # Save individual commander to DB
                                         comm_id = db.get_or_create_commander(comm_name, color_str)
                                         commander_ids.append(comm_id)
                                     
-                                    # 2. Save deck using defined owner_id
                                     db.create_deck(owner_id, deck_name, commander_ids)
                                     st.success(f"Successfully imported **{deck_name}**!")
                                     st.balloons()
@@ -396,11 +367,9 @@ if tab_deck:
                         owner_id = player_dict[owner_name]
                         commander_ids = []
                         
-                        # Primary Commander
                         comm1_id = db.get_or_create_commander(comm1_name.strip(), comm1_colors.strip().upper())
                         commander_ids.append(comm1_id)
                         
-                        # Partner Commander (if provided)
                         if comm2_name.strip():
                             comm2_id = db.get_or_create_commander(comm2_name.strip(), comm2_colors.strip().upper())
                             commander_ids.append(comm2_id)
@@ -415,13 +384,12 @@ if tab_admin:
     with tab_admin:
         st.subheader("🛠️ Admin Controls")
         
-        # Display persistent success banner if set on previous rerun
         if "player_add_success_name" in st.session_state:
             added_name = st.session_state.pop("player_add_success_name")
             st.success(f"🎉 Player **{added_name}** was added successfully!")
             st.toast(f"Added '{added_name}'!", icon="👤")
 
-        # --- EXPANDER 1: ADD / REMOVE PLAYERS ---
+        # Expander 1: Add / Remove Players
         with st.expander("👤 Manage Players (Add / Delete)", expanded=False):
             col_add, col_del = st.columns(2)
             
@@ -467,7 +435,7 @@ if tab_admin:
                         else:
                             st.error("Please select a player to remove.")
 
-        # --- EXPANDER 2: UPGRADE / LINK MANUAL DECK TO MOXFIELD ---
+        # Expander 2: Upgrade / Link Manual Deck to Moxfield
         with st.expander("🔗 Upgrade Manual Deck to Moxfield", expanded=False):
             st.markdown("Select a player and deck to sync or re-import from a Moxfield link:")
             players = db.fetch_players()
@@ -528,7 +496,7 @@ if tab_admin:
                     else:
                         st.info("This player has no registered decks.")
 
-        # --- EXPANDER 3: LIST PLAYERS & REGISTERED DECKS ---
+        # Expander 3: View Registered Decks
         with st.expander("🃏 View Registered Players & Decks", expanded=False):
             all_decks = db.fetch_all_decks_with_owners()
             if all_decks:
@@ -546,7 +514,7 @@ if tab_admin:
             else:
                 st.info("No decks registered in the database yet.")
 
-        # --- EXPANDER 4: DELETE MATCH LOGS ---
+        # Expander 4: Delete Matches
         with st.expander("🗑️ Match Management (Delete Matches)", expanded=False):
             st.markdown("Select a game session to delete from database logs:")
             recent_games = db.fetch_recent_games(limit=20)
@@ -584,7 +552,7 @@ with tab_stats:
     raw_stats = db.get_player_stats()
     all_decks = db.get_all_deck_performance_stats()
     
-    total_games_played = sum([dict(r)['wins'] for r in raw_stats]) if raw_stats else 0
+    total_games_played = db.get_total_games_count() if hasattr(db, 'get_total_games_count') else (sum([dict(r)['wins'] for r in raw_stats]) if raw_stats else 0)
     total_registered_decks = len(all_decks) if all_decks else 0
     
     overview_data = db.get_game_overview_stats()
@@ -595,53 +563,26 @@ with tab_stats:
         avg_turns = round(overview_df['avg_turns'].mean(), 1)
         avg_duration = round(overview_df['avg_duration'].mean(), 0)
 
-    # 4-Metric Grid
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        total_turns = st.number_input(
-            "Total Turns", 
-            min_value=1, 
-            max_value=50, 
-            key="input_total_turns"
-        )
-    with col2:
-        duration = st.number_input(
-            "Duration (mins)", 
-            min_value=1, 
-            max_value=500, 
-            key="input_duration"
-        )
-    with col3:
-        bracket_level = st.selectbox(
-            "Game Bracket",
-            options=[1, 2, 3, 4, 5],
-            index=2,  # Defaults to Bracket 3
-            help="Bracket 1: Precon/Exhibition | Bracket 2: Low-Mid | Bracket 3: High/Optimized | Bracket 4: Very High | Bracket 5: cEDH",
-            key="input_bracket"
-        )
-
-    # ... inside submit_match block ...
-    game_data = {
-        "total_turns": total_turns,
-        "duration_minutes": duration,
-        "win_condition": win_condition,
-        "notes": notes,
-        "bracket": bracket_level
-    }
+    # Overview Metrics Grid
+    col_m1, col_m2 = st.columns(2)
+    with col_m1:
+        st.metric("Total Matches Logged", total_games_played)
+        st.metric("Avg Turn Count", f"Turn {avg_turns}" if avg_turns else "N/A")
+    with col_m2:
+        st.metric("Total Decks Registered", total_registered_decks)
+        st.metric("Avg Game Length", f"{int(avg_duration)} mins" if avg_duration else "N/A")
     
     st.divider()
 
-    # 2. DECK OWNERSHIP & COLOR DISTRIBUTION (NEW)
+    # 2. DECK OWNERSHIP & COLOR DISTRIBUTION
     st.markdown("### 🧮 Playgroup Arsenal & Deck Ownership")
     col_ownership, col_colors = st.columns(2)
 
-    # Decks Owned per Player
     with col_ownership:
         st.markdown("#### 🃏 Decks Owned per Player")
         ownership_stats = db.get_deck_ownership_stats()
         if ownership_stats:
             df_owners = pd.DataFrame([dict(row) for row in ownership_stats])
-            
             st.dataframe(
                 df_owners[['player_name', 'deck_count']],
                 column_config={
@@ -652,12 +593,10 @@ with tab_stats:
                 use_container_width=True
             )
 
-    # Color Distribution across all decks
     with col_colors:
         st.markdown("#### 🎨 Color Presence in Arsenal")
         color_presence = db.get_color_presence_stats()
         if color_presence:
-            # Aggregate individual WUBRG character presence across all commanders
             color_counts = {'W': 0, 'U': 0, 'B': 0, 'R': 0, 'G': 0, 'C': 0}
             for row in color_presence:
                 identity = str(row['color_identity']).upper()
@@ -709,12 +648,10 @@ with tab_stats:
 
     st.divider()
 
-    # 4. ALL DECKS PERFORMANCE TABLE (WITH ZERO/NULL SAFETY)
+    # 4. ALL DECKS PERFORMANCE TABLE
     st.markdown("### 🃏 Complete Deck Performance")
     if all_decks:
         df_decks = pd.DataFrame([dict(row) for row in all_decks])
-        
-        # Calculate win rate, safely treating 0 games as 0.0% win rate
         df_decks['win_rate'] = df_decks.apply(
             lambda r: (r['wins'] / r['games_played'] * 100) if r['games_played'] > 0 else 0.0, 
             axis=1
@@ -747,17 +684,7 @@ with tab_stats:
         df_colors = pd.DataFrame([dict(row) for row in color_stats])
         df_colors['win_rate'] = (df_colors['wins'] / df_colors['games_played']) * 100
         
-        # Individual Mana Symbols
-        mana_icons = {
-            'W': '☀️',
-            'U': '💧',
-            'B': '💀',
-            'R': '🔥',
-            'G': '🌳',
-            'C': '💎'
-        }
-        
-        # Guild / Combination Names
+        mana_icons = {'W': '☀️', 'U': '💧', 'B': '💀', 'R': '🔥', 'G': '🌳', 'C': '💎'}
         guild_names = {
             'W': 'Mono White', 'U': 'Mono Blue', 'B': 'Mono Black', 'R': 'Mono Red', 'G': 'Mono Green', 'C': 'Colorless',
             'WU': 'Azorius', 'UB': 'Dimir', 'BR': 'Rakdos', 'RG': 'Gruul', 'GW': 'Selesnya',
@@ -771,22 +698,14 @@ with tab_stats:
         def format_color_identity(color_raw):
             if not color_raw:
                 return "💎 Colorless"
-                
-            # Normalize and sort WUBRG order for consistent lookups
             wubrg_order = "WUBRG"
             sorted_chars = sorted(
                 str(color_raw).upper().strip(), 
                 key=lambda x: wubrg_order.find(x) if x in wubrg_order else 99
             )
-            
             clean_code = "".join(sorted_chars)
-            
-            # Map emojis (e.g., ['💧', '💀', '🔥'])
             emojis = "".join([mana_icons.get(char, '') for char in clean_code])
-            
-            # Get guild/shard name if available
             name = guild_names.get(clean_code, clean_code)
-            
             return f"{emojis} {name}"
         
         df_colors['identity_display'] = df_colors['color_identity'].apply(format_color_identity)
@@ -808,46 +727,36 @@ with tab_stats:
             use_container_width=True
         )
 
-st.divider()
+    st.divider()
 
     # 6. BRACKET PERFORMANCE & DISTRIBUTION
-st.markdown("### 🎯 Bracket Distribution & Game Velocity")
-bracket_data = db.get_bracket_stats()
-    
-if bracket_data:
-    df_bracket = pd.DataFrame([dict(row) for row in bracket_data])
-    df_bracket['bracket_label'] = df_bracket['bracket'].apply(lambda x: f"Bracket {x}")
-    
-    col_b_chart1, col_b_chart2 = st.columns(2)
-    
-    with col_b_chart1:
-        st.markdown("#### 📊 Total Matches per Bracket")
-        st.bar_chart(
-            df_bracket, 
-            x='bracket_label', 
-            y='total_games', 
-            color='#ff4b4b'
-        )
-        
-    with col_b_chart2:
-        st.markdown("#### ⚡ Average Turns by Bracket")
-        st.line_chart(
-            df_bracket, 
-            x='bracket_label', 
-            y='avg_turns', 
-            color='#29b5e8'
-        )
-        
-    st.dataframe(
-        df_bracket[['bracket_label', 'total_games', 'avg_turns', 'avg_duration']],
-        column_config={
-            "bracket_label": st.column_config.TextColumn("Power Bracket"),
-            "total_games": st.column_config.NumberColumn("Matches Logged", format="%d"),
-            "avg_turns": st.column_config.NumberColumn("Avg Turn Count", format="Turn %.1f"),
-            "avg_duration": st.column_config.NumberColumn("Avg Duration", format="%d mins"),
-        },
-        hide_index=True,
-        use_container_width=True
-    )
-else:
-    st.info("No bracket data logged yet.")
+    st.markdown("### 🎯 Bracket Distribution & Game Velocity")
+    if hasattr(db, 'get_bracket_stats'):
+        bracket_data = db.get_bracket_stats()
+        if bracket_data:
+            df_bracket = pd.DataFrame([dict(row) for row in bracket_data])
+            df_bracket['bracket_label'] = df_bracket['bracket'].apply(lambda x: f"Bracket {x}")
+            
+            col_b_chart1, col_b_chart2 = st.columns(2)
+            
+            with col_b_chart1:
+                st.markdown("#### 📊 Total Matches per Bracket")
+                st.bar_chart(df_bracket, x='bracket_label', y='total_games', color='#ff4b4b')
+                
+            with col_b_chart2:
+                st.markdown("#### ⚡ Average Turns by Bracket")
+                st.line_chart(df_bracket, x='bracket_label', y='avg_turns', color='#29b5e8')
+                
+            st.dataframe(
+                df_bracket[['bracket_label', 'total_games', 'avg_turns', 'avg_duration']],
+                column_config={
+                    "bracket_label": st.column_config.TextColumn("Power Bracket"),
+                    "total_games": st.column_config.NumberColumn("Matches Logged", format="%d"),
+                    "avg_turns": st.column_config.NumberColumn("Avg Turn Count", format="Turn %.1f"),
+                    "avg_duration": st.column_config.NumberColumn("Avg Duration", format="%d mins"),
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+        else:
+            st.info("No bracket data logged yet.")
