@@ -67,6 +67,98 @@ else:
 # ------------------------------------------------------------------------------
 if tab_log:
     with tab_log:
+        st.subheader("⚔️ Live Match Companion & Logger")
+
+        # 1. Initialize Live Match Session State Variables
+        if "timer_running" not in st.session_state:
+            st.session_state.timer_running = False
+        if "timer_start_time" not in st.session_state:
+            st.session_state.timer_start_time = None
+        if "timer_elapsed_seconds" not in st.session_state:
+            st.session_state.timer_elapsed_seconds = 0
+        if "live_turn_count" not in st.session_state:
+            st.session_state.live_turn_count = 1
+            
+        # 2. Live Time Calculation
+        import time
+        current_elapsed = st.session_state.timer_elapsed_seconds
+        if st.session_state.timer_running and st.session_state.timer_start_time is not None:
+            current_elapsed += int(time.time() - st.session_state.timer_start_time)
+
+        # ----------------------------------------------------------------------
+        # LIVE GAME CONTROLLER WIDGET
+        # ----------------------------------------------------------------------
+        with st.expander("⏱️ Live Game Companion (Timer & Turn Counter)", expanded=True):
+            col_timer, col_turns = st.columns(2)
+            
+            # --- TIMER CONTROL ---
+            with col_timer:
+                st.markdown("#### ⏳ Match Timer")
+                mins, secs = divmod(current_elapsed, 60)
+                hrs, mins = divmod(mins, 60)
+                time_str = f"{hrs:02d}:{mins:02d}:{secs:02d}" if hrs > 0 else f"{mins:02d}:{secs:02d}"
+                
+                st.markdown(f"<h2 style='text-align: center; margin: 0; color: #ff4b4b;'>{time_str}</h2>", unsafe_allow_html=True)
+                
+                t_col1, t_col2 = st.columns(2)
+                with t_col1:
+                    if not st.session_state.timer_running:
+                        if st.button("▶️ Start / Resume", use_container_width=True, key="btn_timer_start"):
+                            st.session_state.timer_running = True
+                            st.session_state.timer_start_time = time.time()
+                            st.rerun()
+                    else:
+                        if st.button("⏸️ Pause", use_container_width=True, key="btn_timer_pause"):
+                            st.session_state.timer_running = False
+                            st.session_state.timer_elapsed_seconds = current_elapsed
+                            st.session_state.timer_start_time = None
+                            st.rerun()
+                
+                with t_col2:
+                    if st.button("🔄 Reset Timer", use_container_width=True, key="btn_timer_reset"):
+                        st.session_state.timer_running = False
+                        st.session_state.timer_start_time = None
+                        st.session_state.timer_elapsed_seconds = 0
+                        st.rerun()
+
+            # --- TURN COUNTER ---
+            with col_turns:
+                st.markdown("#### 🔄 Turn Counter")
+                st.markdown(f"<h2 style='text-align: center; margin: 0;'>Turn {st.session_state.live_turn_count}</h2>", unsafe_allow_html=True)
+                
+                turn_col1, turn_col2 = st.columns(2)
+                with turn_col1:
+                    if st.button("➖ Turn", use_container_width=True, key="btn_sub_turn"):
+                        if st.session_state.live_turn_count > 1:
+                            st.session_state.live_turn_count -= 1
+                            st.rerun()
+                with turn_col2:
+                    if st.button("➕ Next Turn", type="primary", use_container_width=True, key="btn_add_turn"):
+                        st.session_state.live_turn_count += 1
+                        st.rerun()
+
+            st.divider()
+            
+            # --- END MATCH & AUTO-FILL BUTTON ---
+            if st.button("🏁 End Match & Auto-Fill Form", type="primary", use_container_width=True, key="btn_end_match"):
+                # Stop timer and snapshot elapsed time
+                if st.session_state.timer_running and st.session_state.timer_start_time is not None:
+                    st.session_state.timer_elapsed_seconds += int(time.time() - st.session_state.timer_start_time)
+                    st.session_state.timer_running = False
+                    st.session_state.timer_start_time = None
+                
+                # Convert seconds to total minutes (rounded up to minimum 1 min)
+                final_minutes = max(1, round(st.session_state.timer_elapsed_seconds / 60))
+                
+                # Push values to form input session keys
+                st.session_state["total_turns_input"] = st.session_state.live_turn_count
+                st.session_state["duration_input"] = final_minutes
+                
+                st.toast(f"Pushed {final_minutes} mins and Turn {st.session_state.live_turn_count} to form!", icon="⏱️")
+                st.rerun()
+
+if tab_log:
+    with tab_log:
         st.subheader("Match Details")
         players = db.fetch_players()
         
@@ -76,11 +168,27 @@ if tab_log:
             player_dict = {p['display_name']: p['player_id'] for p in players}
             player_names = list(player_dict.keys())
 
+            # Initialize default form values if not set by timer
+        if "total_turns_input" not in st.session_state:
+            st.session_state["total_turns_input"] = 8
+        if "duration_input" not in st.session_state:
+            st.session_state["duration_input"] = 45
+
             col1, col2 = st.columns(2)
             with col1:
-                total_turns = st.number_input("Total Turns", min_value=1, max_value=30, value=8)
+                total_turns = st.number_input(
+                    "Total Turns", 
+                    min_value=1, 
+                    max_value=50, 
+                    key="total_turns_input"
+                )
             with col2:
-                duration = st.number_input("Duration (mins)", min_value=5, max_value=300, value=45)
+                duration = st.number_input(
+                    "Duration (mins)", 
+                    min_value=1, 
+                    max_value=500, 
+                    key="duration_input"
+                )
 
             win_condition = st.selectbox(
                 "Win Condition",
@@ -164,8 +272,26 @@ if tab_log:
                         "notes": notes
                     }
                     db.log_game_session(game_data, participants_input)
-                    st.toast("Game successfully logged!", icon="🎉")
-                    st.success("Game successfully logged!")
+                    if submit_match:
+                    # ... validation logic ...
+                    else:
+                        game_data = {
+                            "total_turns": total_turns,
+                            "duration_minutes": duration,
+                            "win_condition": win_condition,
+                            "notes": notes
+                        }
+                        db.log_game_session(game_data, participants_input)
+                        
+                        # RESET TIMER & TURN COUNTER FOR NEXT MATCH
+                        st.session_state.timer_running = False
+                        st.session_state.timer_start_time = None
+                        st.session_state.timer_elapsed_seconds = 0
+                        st.session_state.live_turn_count = 1
+                        
+                        st.toast("Game successfully logged!", icon="🎉")
+                        st.success("Game successfully logged!")
+                        st.rerun()
 
 # ------------------------------------------------------------------------------
 # TAB 2: ADD DECK (ADMIN & LOGGER ONLY)
