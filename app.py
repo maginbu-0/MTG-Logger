@@ -330,42 +330,49 @@ with tab_stats:
 
         st.divider()
 
-        # 3. Color Identity Performance (Multi-Symbol HTML Layout)
+        # 3. Color Identity Performance (Native Streamlit Mobile Grid)
         st.markdown("### 🎨 Color Identity Win Rates")
         color_stats = db.get_color_identity_stats()
         if color_stats:
             df_colors = pd.DataFrame([dict(row) for row in color_stats])
             df_colors['win_rate'] = (df_colors['wins'] / df_colors['games_played']) * 100
             
-            # Generate multi-icon HTML string
-            df_colors['symbols_html'] = df_colors['color_identity'].apply(format_mana_symbols)
-            df_colors['win_rate_str'] = df_colors['win_rate'].apply(lambda x: f"{x:.1f}%")
+            # Header Row
+            h1, h2, h3, h4 = st.columns([2, 1, 1, 3])
+            h1.markdown("**Identity**")
+            h2.markdown("**Played**")
+            h3.markdown("**Wins**")
+            h4.markdown("**Win Rate**")
+            st.divider()
 
-            # Create clean HTML table
-            table_html = """
-            <table style="width:100%; border-collapse: collapse; margin-top: 10px;">
-                <thead>
-                    <tr style="border-bottom: 2px solid #333; text-align: left;">
-                        <th style="padding: 8px;">Symbols</th>
-                        <th style="padding: 8px;">Identity</th>
-                        <th style="padding: 8px;">Played</th>
-                        <th style="padding: 8px;">Wins</th>
-                        <th style="padding: 8px;">Win Rate</th>
-                    </tr>
-                </thead>
-                <tbody>
-            """
-            
+            # Data Rows
             for _, row in df_colors.iterrows():
-                table_html += f"""
-                <tr style="border-bottom: 1px solid #222;">
-                    <td style="padding: 8px;">{row['symbols_html']}</td>
-                    <td style="padding: 8px; font-weight: bold;">{row['color_identity']}</td>
-                    <td style="padding: 8px;">{row['games_played']}</td>
-                    <td style="padding: 8px;">{row['wins']}</td>
-                    <td style="padding: 8px;">{row['win_rate_str']}</td>
-                </tr>
-                """
-            
-            table_html += "</tbody></table>"
-            st.markdown(table_html, unsafe_allow_html=True)
+                c1, c2, c3, c4 = st.columns([2, 1, 1, 3])
+                
+                with c1:
+                    # Clean color mapping
+                    color_str = str(row['color_identity']).upper().strip()
+                    color_map = {
+                        'ORZHOV': 'WB', 'IZZET': 'UR', 'GOLGARI': 'BG', 'BOROS': 'WR', 'SIMIC': 'UG',
+                        'AZORIUS': 'WU', 'DIMIR': 'UB', 'RAKDOS': 'BR', 'GRUUL': 'RG', 'SELESNYA': 'GW',
+                        'ESPER': 'WUB', 'BANT': 'GWU', 'GRIXIS': 'UBR', 'JUND': 'BRG', 'NAYA': 'RGW',
+                        'ABZAN': 'WBG', 'JESKAI': 'URW', 'SULTAI': 'BGU', 'MARDU': 'RWB', 'TEMUR': 'GUR'
+                    }
+                    if color_str in color_map:
+                        color_str = color_map[color_str]
+                        
+                    symbols = [char for char in color_str if char in ['W', 'U', 'B', 'R', 'G', 'C']]
+                    
+                    # Render Mana Symbol SVGs side-by-side inside Streamlit columns
+                    if symbols:
+                        icon_cols = st.columns(len(symbols) + 1)
+                        for idx, sym in enumerate(symbols):
+                            icon_cols[idx].image(f"https://svgs.scryfall.io/card-symbols/{sym}.svg", width=20)
+                    else:
+                        st.write(color_str)
+
+                c2.write(f"{row['games_played']}")
+                c3.write(f"{row['wins']}")
+                
+                with c4:
+                    st.progress(int(row['win_rate']) / 100, text=f"{row['win_rate']:.1f}%")
