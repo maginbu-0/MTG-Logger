@@ -272,8 +272,20 @@ if tab_log:
                         "notes": notes
                     }
                     db.log_game_session(game_data, participants_input)
+
                     if submit_match:
-                    # ... validation logic ...
+                        missing_players = any(p['player_id'] is None for p in participants_input)
+                        missing_decks = any(p['deck_id'] is None for p in participants_input)
+                        winners_count = sum(1 for p in participants_input if p['is_winner'])
+
+                    if not win_condition:
+                        st.error("Please select a Win Condition.")
+                    elif missing_players:
+                        st.error("Please select a player for all 4 seats.")
+                    elif missing_decks:
+                        st.error("Please select a deck for all 4 seats.")
+                    elif winners_count != 1:
+                        st.warning("Please mark exactly ONE player as the winner.")
                     else:
                         game_data = {
                             "total_turns": total_turns,
