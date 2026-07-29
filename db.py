@@ -277,18 +277,15 @@ def fetch_all_decks_with_owners():
         cur.execute(query)
         return cur.fetchall()
 
-    def update_deck_from_moxfield(deck_id, new_deck_name, commander_ids):
-    """Updates an existing deck's name and re-links its commanders from Moxfield."""
+
+def update_deck_from_moxfield(deck_id, new_deck_name, commander_ids):
     query_update_deck = "UPDATE decks SET deck_name = %s WHERE deck_id = %s;"
     query_clear_commanders = "DELETE FROM deck_commanders WHERE deck_id = %s;"
     query_add_commander = "INSERT INTO deck_commanders (deck_id, commander_id) VALUES (%s, %s);"
     
     with get_db() as conn:
         cur = conn.cursor()
-        # 1. Update deck name
         cur.execute(query_update_deck, (new_deck_name, deck_id))
-        # 2. Clear old commander associations
         cur.execute(query_clear_commanders, (deck_id,))
-        # 3. Insert new commander associations
         for comm_id in commander_ids:
             cur.execute(query_add_commander, (deck_id, comm_id))

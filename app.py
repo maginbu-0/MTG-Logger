@@ -1,7 +1,7 @@
 import streamlit as st
-import db
 import requests
 import pandas as pd
+import db
 
 # Page setup
 st.set_page_config(
