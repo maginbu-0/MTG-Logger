@@ -209,3 +209,19 @@ def get_game_overview_stats():
         cur = conn.cursor()
         cur.execute(query)
         return cur.fetchall()
+
+
+def add_player(display_name):
+    """Adds a new player to the database."""
+    query = "INSERT INTO players (display_name) VALUES (%s) RETURNING player_id;"
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query, (display_name,))
+        return cur.fetchone()['player_id']
+
+def delete_player(player_id):
+    """Deletes or deactivates a player by ID."""
+    query = "DELETE FROM players WHERE player_id = %s;"
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query, (player_id,))
