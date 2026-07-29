@@ -5,20 +5,20 @@ from dotenv import load_dotenv
 from contextlib import contextmanager
 import streamlit as st
 
+# 1. Load local .env file if running locally
 load_dotenv()
 
 DATABASE_URL = None
 
-# Debug check: Check if secrets exists and list keys safely
+# 2. Safely attempt to read Streamlit Secrets without triggering an unhandled exception
 try:
-    if hasattr(st, "secrets") and "DATABASE_URL" in st.secrets:
-        DATABASE_URL = st.secrets["DATABASE_URL"]
-    elif hasattr(st, "secrets"):
-        # If secrets exists but DATABASE_URL isn't found, print available keys
-        print("Available keys in st.secrets:", list(st.secrets.keys()))
-except Exception as e:
-    print("Secrets lookup error:", e)
+    # Try directly accessing the key inside st.secrets
+    DATABASE_URL = st.secrets.get("DATABASE_URL")
+except Exception:
+    # If st.secrets is completely uninitialized/empty on Streamlit Cloud, catch the error silently
+    DATABASE_URL = None
 
+# 3. Fallback to OS environment variable (.env) if st.secrets was empty or missing
 if not DATABASE_URL:
     DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -26,9 +26,10 @@ if not DATABASE_URL:
 def get_db():
     """Context manager for Supabase PostgreSQL connection."""
     if not DATABASE_URL:
-        # Print debugging context to Streamlit Cloud Logs
-        keys = list(st.secrets.keys()) if hasattr(st, "secrets") else "No secrets object"
-        raise ValueError(f"DATABASE_URL missing. Current st.secrets keys found: {keys}")
+        raise ValueError(
+            "DATABASE_URL is missing. Please add DATABASE_URL = \"your_connection_string\" "
+            "in Streamlit Cloud's Secrets manager (Settings -> Secrets) or in your local .env file."
+        )
         
     conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
     try:
