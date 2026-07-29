@@ -359,92 +359,51 @@ with tab_stats:
 
         st.divider()
 
-        # 3. Color Identity Performance (Native Styled Table)
+        # 3. Color Identity Performance (Native Streamlit DataFrame)
         st.markdown("### 🎨 Color Identity Win Rates")
         color_stats = db.get_color_identity_stats()
         if color_stats:
             df_colors = pd.DataFrame([dict(row) for row in color_stats])
             df_colors['win_rate'] = (df_colors['wins'] / df_colors['games_played']) * 100
             
-            # Build Styled Table HTML matching st.dataframe theme
-            table_html = """
-            <style>
-                .mtg-table-container {
-                    border: 1px solid #262730;
-                    border-radius: 8px;
-                    overflow: hidden;
-                    background-color: #0e1117;
-                    margin-top: 10px;
-                }
-                .mtg-table {
-                    width: 100%;
-                    border-collapse: collapse;
-                    font-family: inherit;
-                    font-size: 14px;
-                    color: #fafafa;
-                }
-                .mtg-table th {
-                    background-color: #161b22;
-                    padding: 10px 12px;
-                    text-align: left;
-                    font-weight: 600;
-                    border-bottom: 1px solid #262730;
-                    color: #8b949e;
-                }
-                .mtg-table td {
-                    padding: 10px 12px;
-                    border-bottom: 1px solid #262730;
-                    vertical-align: middle;
-                }
-                .mtg-table tr:last-child td {
-                    border-bottom: none;
-                }
-                .progress-bar-bg {
-                    background-color: #21262d;
-                    border-radius: 4px;
-                    height: 8px;
-                    width: 100%;
-                    overflow: hidden;
-                    display: inline-block;
-                }
-                .progress-bar-fill {
-                    background-color: #ff4b4b;
-                    height: 100%;
-                    border-radius: 4px;
-                }
-            </style>
-            <div class="mtg-table-container">
-                <table class="mtg-table">
-                    <thead>
-                        <tr>
-                            <th>Color Identity</th>
-                            <th style="text-align: center;">Played</th>
-                            <th style="text-align: center;">Wins</th>
-                            <th style="width: 40%;">Win Rate (%)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-            """
-            
-            for _, row in df_colors.iterrows():
-                mana_icons = get_tight_mana_html(row['color_identity'])
-                win_pct = row['win_rate']
+            # Helper to map raw color codes to tight mana symbol representations
+            def get_mana_symbols_text(color_str):
+                if not color_str:
+                    return ""
                 
-                table_html += f"""
-                <tr>
-                    <td>{mana_icons}</td>
-                    <td style="text-align: center;">{row['games_played']}</td>
-                    <td style="text-align: center;">{row['wins']}</td>
-                    <td>
-                        <div style="display: flex; align-items: center; gap: 10px;">
-                            <div class="progress-bar-bg">
-                                <div class="progress-bar-fill" style="width: {win_pct}%;"></div>
-                            </div>
-                            <span style="font-size: 13px; font-weight: 500; min-width: 45px; text-align: right;">{win_pct:.1f}%</span>
-                        </div>
-                    </td>
-                </tr>
-                """
+                # Unicode/Emoji Mana Icons for 100% native rendering inside st.dataframe
+                symbol_map = {
+                    'W': '☀️', 'U': '💧', 'B': '💀', 'R': '🔥', 'G': '🌳', 'C': '💎',
+                    'ORZHOV': '☀️💀', 'IZZET': '💧🔥', 'GOLGARI': '💀🌳', 'BOROS': '☀️🔥', 'SIMIC': '💧🌳',
+                    'AZORIUS': '☀️💧', 'DIMIR': '💧💀', 'RAKDOS': '💀🔥', 'GRUUL': '🔥🌳', 'SELESNYA': '☀️🌳',
+                    'ESPER': '☀️💧💀', 'BANT': '☀️💧🌳', 'GRIXIS': '💧💀🔥', 'JUND': '💀🔥🌳', 'NAYA': '☀️🔥🌳',
+                    'ABZAN': '☀️💀🌳', 'JESKAI': '☀️💧🔥', 'SULTAI': '💧💀🌳', 'MARDU': '☀️💀🔥', 'TEMUR': '💧🔥🌳'
+                }
+                
+                cleaned = str(color_str).upper().strip()
+                if cleaned in symbol_map:
+                    return f"{symbol_map[cleaned]} {cleaned}"
+                
+                # Fallback: Loop through letters and map individual symbols tightly
+                icons = "".join([symbol_map.get(char, char) for char in cleaned if char in 'WUBRGC'])
+                return f"{icons} {cleaned}" if icons else cleaned
+
+            # Apply symbol mapping
+            df_colors['identity_display'] = df_colors['color_identity'].apply(get_mana_symbols_text)
             
-            table_html += "</tbody></table></div>"
-            st.markdown(table_html, unsafe_allow_html=True)
+            st.dataframe(
+                df_colors[['identity_display', 'games_played', 'wins', 'win_rate']],
+                column_config={
+                    "identity_display": st.column_config.TextColumn("Color Identity"),
+                    "games_played": st.column_config.NumberColumn("Played", format="%d"),
+                    "wins": st.column_config.NumberColumn("Wins", format="%d"),
+                    "win_rate": st.column_config.ProgressColumn(
+                        "Win Rate (%)",
+                        format="%.1f%%",
+                        min_value=0,
+                        max_value=100,
+                    ),
+                },
+                hide_index=True,
+                use_container_width=True
+            )
