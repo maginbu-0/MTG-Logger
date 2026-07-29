@@ -252,43 +252,92 @@ if tab_deck:
                         st.success(f"Deck '{manual_deck_name}' created manually!")
 
 # ------------------------------------------------------------------------------
-# TAB: MANAGE PLAYERS (ADMIN ONLY - PIN A)
+# TAB: MANAGE PLAYERS & MATCHES (ADMIN ONLY - PIN A)
 # ------------------------------------------------------------------------------
 if tab_players:
     with tab_players:
-        st.subheader("👥 Manage Playgroup Members")
+        st.subheader("🛠️ Admin Controls")
         
-        col_add, col_del = st.columns(2)
-        
-        # Add Player Block
-        with col_add:
-            st.markdown("### ➕ Add Player")
-            new_player_name = st.text_input("Player Name", placeholder="e.g. John Doe")
-            if st.button("Add Player", type="primary"):
-                if new_player_name:
-                    db.add_player(new_player_name.strip())
-                    st.toast(f"Added '{new_player_name}'!", icon="👤")
-                    st.success(f"Player '{new_player_name}' added to database!")
-                    st.rerun()
-                else:
-                    st.error("Please enter a name.")
-
-        # Remove Player Block
-        with col_del:
-            st.markdown("### 🗑️ Remove Player")
-            players = db.fetch_players()
-            if players:
-                player_dict = {p['display_name']: p['player_id'] for p in players}
-                remove_name = st.selectbox("Select Player to Remove", list(player_dict.keys()), index=None)
-                
-                if st.button("Delete Player", type="secondary"):
-                    if remove_name:
-                        db.delete_player(player_dict[remove_name])
-                        st.toast(f"Removed '{remove_name}'", icon="🗑️")
-                        st.success(f"Player '{remove_name}' deleted!")
+        # --- EXPANDER 1: ADD / REMOVE PLAYERS ---
+        with st.expander("👤 Manage Players (Add / Delete)", expanded=False):
+            col_add, col_del = st.columns(2)
+            
+            with col_add:
+                st.markdown("#### ➕ Add Player")
+                new_player_name = st.text_input("Player Name", placeholder="e.g. John Doe", key="admin_add_player_input")
+                if st.button("Add Player", type="primary", key="btn_add_player"):
+                    if new_player_name:
+                        db.add_player(new_player_name.strip())
+                        st.toast(f"Added '{new_player_name}'!", icon="👤")
+                        st.success(f"Player '{new_player_name}' added!")
                         st.rerun()
                     else:
-                        st.error("Please select a player to remove.")
+                        st.error("Please enter a name.")
+
+            with col_del:
+                st.markdown("#### 🗑️ Remove Player")
+                players = db.fetch_players()
+                if players:
+                    player_dict = {p['display_name']: p['player_id'] for p in players}
+                    remove_name = st.selectbox("Select Player to Remove", list(player_dict.keys()), index=None, key="admin_remove_player_select")
+                    
+                    if st.button("Delete Player", type="secondary", key="btn_del_player"):
+                        if remove_name:
+                            db.delete_player(player_dict[remove_name])
+                            st.toast(f"Removed '{remove_name}'", icon="🗑️")
+                            st.success(f"Player '{remove_name}' deleted!")
+                            st.rerun()
+                        else:
+                            st.error("Please select a player to remove.")
+
+        # --- EXPANDER 2: LIST PLAYERS & REGISTERED DECKS ---
+        with st.expander("🃏 View Registered Players & Decks", expanded=False):
+            all_decks = db.fetch_all_decks_with_owners()
+            if all_decks:
+                df_all_decks = pd.DataFrame([dict(row) for row in all_decks])
+                st.dataframe(
+                    df_all_decks[['owner_name', 'deck_name', 'commander_names']],
+                    column_config={
+                        "owner_name": st.column_config.TextColumn("Pilot / Owner"),
+                        "deck_name": st.column_config.TextColumn("Deck Name"),
+                        "commander_names": st.column_config.TextColumn("Commander(s)"),
+                    },
+                    hide_index=True,
+                    use_container_width=True
+                )
+            else:
+                st.info("No decks registered in the database yet.")
+
+        # --- EXPANDER 3: DELETE MATCH LOGS ---
+        with st.expander("🗑️ Match Management (Delete Matches)", expanded=False):
+            st.markdown("Select a game session to delete from database logs:")
+            recent_games = db.fetch_recent_games(limit=20)
+            
+            if recent_games:
+                # Format options cleanly for dropdown
+                game_options = {}
+                for g in recent_games:
+                    label = f"Game #{g['game_id']} | Turns: {g['total_turns']} | Win: {g['win_condition']} ({g['participants']})"
+                    game_options[label] = g['game_id']
+                
+                selected_game_label = st.selectbox("Select Match to Delete", list(game_options.keys()), index=None)
+                
+                if selected_game_label:
+                    game_to_delete_id = game_options[selected_game_label]
+                    
+                    # Safety check before deletion
+                    confirm_delete = st.checkbox(f"I understand this will permanently delete Game #{game_to_delete_id}", key="confirm_game_del")
+                    
+                    if st.button("⚠️ Delete Match Session", type="primary", key="btn_del_game"):
+                        if confirm_delete:
+                            db.delete_game_session(game_to_delete_id)
+                            st.toast(f"Game #{game_to_delete_id} deleted!", icon="🗑️")
+                            st.success(f"Successfully deleted Game #{game_to_delete_id}!")
+                            st.rerun()
+                        else:
+                            st.error("Please check the confirmation box first.")
+            else:
+                st.info("No logged matches found.")
 
 # ------------------------------------------------------------------------------
 # TAB: ANALYTICS (PUBLIC / ALL ROLES)

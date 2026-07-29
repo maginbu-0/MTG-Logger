@@ -225,3 +225,55 @@ def delete_player(player_id):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(query, (player_id,))
+
+def fetch_recent_games(limit=25):
+    """Fetches a list of recent games with summary details for deletion/review."""
+    query = """
+        SELECT 
+            g.game_id,
+            g.created_at,
+            g.total_turns,
+            g.win_condition,
+            g.notes,
+            STRING_AGG(p.display_name, ', ') AS participants
+        FROM games g
+        JOIN game_participants gp ON g.game_id = gp.game_id
+        JOIN players p ON gp.player_id = p.player_id
+        GROUP BY g.game_id
+        ORDER BY g.game_id DESC
+        LIMIT %s;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query, (limit,))
+        return cur.fetchall()
+
+def delete_game_session(game_id):
+    """Deletes a game session and its associated participant records."""
+    query_participants = "DELETE FROM game_participants WHERE game_id = %s;"
+    query_game = "DELETE FROM games WHERE game_id = %s;"
+    
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query_participants, (game_id,))
+        cur.execute(query_game, (game_id,))
+
+def fetch_all_decks_with_owners():
+    """Fetches all registered decks and their corresponding owners."""
+    query = """
+        SELECT 
+            d.deck_id,
+            d.deck_name,
+            p.display_name AS owner_name,
+            STRING_AGG(c.name, ' & ') AS commander_names
+        FROM decks d
+        JOIN players p ON d.player_id = p.player_id
+        LEFT JOIN deck_commanders dc ON d.deck_id = dc.deck_id
+        LEFT JOIN commanders c ON dc.commander_id = c.commander_id
+        GROUP BY d.deck_id, d.deck_name, p.display_name
+        ORDER BY p.display_name, d.deck_name;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        return cur.fetchall()
