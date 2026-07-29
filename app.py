@@ -216,34 +216,37 @@ with tab_deck:
 # TAB 3: ANALYTICS DASHBOARD
 # ==========================================
 
+import base64
+
 def format_mana_symbols(color_str):
-    """Converts a string like 'WUB' or 'Orzhov' into Scryfall SVG image URLs."""
+    """Generates an inline SVG containing all MTG mana symbols side-by-side for a color string."""
     if not color_str:
         return ""
     
-    # Standard MTG color code mapping
+    # Guild / Wedge name mappings to raw color codes
     color_map = {
-        'W': 'W', 'U': 'U', 'B': 'B', 'R': 'R', 'G': 'G', 'C': 'C',
-        'WHITE': 'W', 'BLUE': 'U', 'BLACK': 'B', 'RED': 'R', 'GREEN': 'G',
         'ORZHOV': 'WB', 'IZZET': 'UR', 'GOLGARI': 'BG', 'BOROS': 'WR', 'SIMIC': 'UG',
-        'AZORIUS': 'WU', 'DIMIR': 'UB', 'RAKDOS': 'BR', 'GRUUL': 'RG', 'SELESNYA': 'GW'
+        'AZORIUS': 'WU', 'DIMIR': 'UB', 'RAKDOS': 'BR', 'GRUUL': 'RG', 'SELESNYA': 'GW',
+        'ESPER': 'WUB', 'BANT': 'GWU', 'GRIXIS': 'UBR', 'JUND': 'BRG', 'NAYA': 'RGW',
+        'ABZAN': 'WBG', 'JESKAI': 'URW', 'SULTAI': 'BGU', 'MARDU': 'RWB', 'TEMUR': 'GUR'
     }
     
-    # Parse input string into individual color characters
-    cleaned_str = color_str.upper()
-    
-    # If the database stored guild names instead of raw letters, map them
-    if cleaned_str in color_map and len(cleaned_str) > 1 and cleaned_str not in ['WUBRG']:
+    cleaned_str = color_str.upper().strip()
+    if cleaned_str in color_map:
         cleaned_str = color_map[cleaned_str]
 
-    # Build image URLs for each symbol (Scryfall CDN)
-    symbols = []
-    for char in cleaned_str:
-        if char in ['W', 'U', 'B', 'R', 'G', 'C']:
-            symbols.append(f"https://svgs.scryfall.io/card-symbols/{char}.svg")
-            
-    # Return the primary/first symbol URL for ImageColumn or list of URLs
-    return symbols[0] if symbols else ""
+    # Map MTG colors to official Scryfall SVG symbol paths
+    symbols = [char for char in cleaned_str if char in ['W', 'U', 'B', 'R', 'G', 'C']]
+    if not symbols:
+        return ""
+
+    # Build an inline multi-image layout using HTML flex container
+    img_tags = "".join([
+        f'<img src="https://svgs.scryfall.io/card-symbols/{s}.svg" width="20" height="20" style="margin-right:2px; vertical-align:middle;"/>'
+        for s in symbols
+    ])
+    
+    return f'<div style="display:flex; align-items:center;">{img_tags}</div>'
 
 with tab_stats:
     st.subheader("📊 Playgroup Operations & Metrics")
@@ -327,34 +330,42 @@ with tab_stats:
 
         st.divider()
 
-        # 3. Color Identity Performance (With MTG Mana Symbols)
+        # 3. Color Identity Performance (Multi-Symbol HTML Layout)
         st.markdown("### 🎨 Color Identity Win Rates")
         color_stats = db.get_color_identity_stats()
         if color_stats:
             df_colors = pd.DataFrame([dict(row) for row in color_stats])
             df_colors['win_rate'] = (df_colors['wins'] / df_colors['games_played']) * 100
             
-            # Map color codes to Scryfall SVG URIs
-            df_colors['symbol_url'] = df_colors['color_identity'].apply(format_mana_symbols)
+            # Generate multi-icon HTML string
+            df_colors['symbols_html'] = df_colors['color_identity'].apply(format_mana_symbols)
+            df_colors['win_rate_str'] = df_colors['win_rate'].apply(lambda x: f"{x:.1f}%")
+
+            # Create clean HTML table
+            table_html = """
+            <table style="width:100%; border-collapse: collapse; margin-top: 10px;">
+                <thead>
+                    <tr style="border-bottom: 2px solid #333; text-align: left;">
+                        <th style="padding: 8px;">Symbols</th>
+                        <th style="padding: 8px;">Identity</th>
+                        <th style="padding: 8px;">Played</th>
+                        <th style="padding: 8px;">Wins</th>
+                        <th style="padding: 8px;">Win Rate</th>
+                    </tr>
+                </thead>
+                <tbody>
+            """
             
-            st.dataframe(
-                df_colors[['symbol_url', 'color_identity', 'games_played', 'wins', 'win_rate']],
-                column_config={
-                    "symbol_url": st.column_config.ImageColumn(
-                        "Symbol",
-                        help="Official MTG Mana Symbol from Scryfall",
-                        width="small"
-                    ),
-                    "color_identity": st.column_config.TextColumn("Color Identity"),
-                    "games_played": st.column_config.NumberColumn("Played", format="%d"),
-                    "wins": st.column_config.NumberColumn("Wins", format="%d"),
-                    "win_rate": st.column_config.ProgressColumn(
-                        "Win Rate (%)",
-                        format="%.1f%%",
-                        min_value=0,
-                        max_value=100,
-                    ),
-                },
-                hide_index=True,
-                use_container_width=True
-            )
+            for _, row in df_colors.iterrows():
+                table_html += f"""
+                <tr style="border-bottom: 1px solid #222;">
+                    <td style="padding: 8px;">{row['symbols_html']}</td>
+                    <td style="padding: 8px; font-weight: bold;">{row['color_identity']}</td>
+                    <td style="padding: 8px;">{row['games_played']}</td>
+                    <td style="padding: 8px;">{row['wins']}</td>
+                    <td style="padding: 8px;">{row['win_rate_str']}</td>
+                </tr>
+                """
+            
+            table_html += "</tbody></table>"
+            st.markdown(table_html, unsafe_allow_html=True)
