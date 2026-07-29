@@ -295,6 +295,8 @@ with tab_stats:
                     use_container_width=True
                 )
 
+        st.divider()
+
         with col_color:
             st.markdown("### 🎨 Color Identity Win Rates")
             color_stats = db.get_color_identity_stats()
