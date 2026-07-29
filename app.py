@@ -235,20 +235,36 @@ if tab_deck:
                             st.error(f"An error occurred: {e}")
 
             with import_manual:
-                manual_deck_name = st.text_input("Deck Name", placeholder="e.g. Orzhov Aristocrats")
-                manual_comm_name = st.text_input("Commander Name", placeholder="e.g. Teysa Karlov")
-                manual_colors = st.text_input("Color Identity", placeholder="e.g. WB, UR, WUBRG")
+                manual_deck_name = st.text_input("Deck Name", placeholder="e.g. Tymna / Kraum Opus")
                 
+                col_c1, col_c2 = st.columns(2)
+                with col_c1:
+                    comm1_name = st.text_input("Primary Commander Name", placeholder="e.g. Tymna the Weaver")
+                    comm1_colors = st.text_input("Commander 1 Colors", placeholder="e.g. WB")
+                with col_c2:
+                    comm2_name = st.text_input("Partner Commander (Optional)", placeholder="e.g. Kraum, Ludevic's Opus")
+                    comm2_colors = st.text_input("Commander 2 Colors", placeholder="e.g. UR")
+
                 save_manual_btn = st.button("Save Manual Deck", use_container_width=True)
-                
+
                 if save_manual_btn:
-                    if not owner_name or not manual_deck_name or not manual_comm_name:
-                        st.error("Please fill in all required fields.")
+                    if not owner_name or not manual_deck_name or not comm1_name:
+                        st.error("Please fill in the Owner, Deck Name, and Primary Commander.")
                     else:
                         owner_id = player_dict[owner_name]
-                        comm_id = db.get_or_create_commander(manual_comm_name.strip(), manual_colors.strip().upper())
-                        db.create_deck(owner_id, manual_deck_name.strip(), [comm_id])
-                        st.success(f"Deck '{manual_deck_name}' created manually!")
+                        commander_ids = []
+                        
+                        # Primary Commander
+                        comm1_id = db.get_or_create_commander(comm1_name.strip(), comm1_colors.strip().upper())
+                        commander_ids.append(comm1_id)
+                        
+                        # Partner Commander (if provided)
+                        if comm2_name.strip():
+                            comm2_id = db.get_or_create_commander(comm2_name.strip(), comm2_colors.strip().upper())
+                            commander_ids.append(comm2_id)
+
+                        db.create_deck(owner_id, manual_deck_name.strip(), commander_ids)
+                        st.success(f"Deck '{manual_deck_name}' created with {len(commander_ids)} commander(s)!")
 
 # ------------------------------------------------------------------------------
 # TAB 3: ADMIN CONTROLS (ADMIN ONLY - PIN A)
