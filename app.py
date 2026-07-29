@@ -807,3 +807,47 @@ with tab_stats:
             hide_index=True,
             use_container_width=True
         )
+
+st.divider()
+
+    # 6. BRACKET PERFORMANCE & DISTRIBUTION
+st.markdown("### 🎯 Bracket Distribution & Game Velocity")
+bracket_data = db.get_bracket_stats()
+    
+if bracket_data:
+    df_bracket = pd.DataFrame([dict(row) for row in bracket_data])
+    df_bracket['bracket_label'] = df_bracket['bracket'].apply(lambda x: f"Bracket {x}")
+    
+    col_b_chart1, col_b_chart2 = st.columns(2)
+    
+    with col_b_chart1:
+        st.markdown("#### 📊 Total Matches per Bracket")
+        st.bar_chart(
+            df_bracket, 
+            x='bracket_label', 
+            y='total_games', 
+            color='#ff4b4b'
+        )
+        
+    with col_b_chart2:
+        st.markdown("#### ⚡ Average Turns by Bracket")
+        st.line_chart(
+            df_bracket, 
+            x='bracket_label', 
+            y='avg_turns', 
+            color='#29b5e8'
+        )
+        
+    st.dataframe(
+        df_bracket[['bracket_label', 'total_games', 'avg_turns', 'avg_duration']],
+        column_config={
+            "bracket_label": st.column_config.TextColumn("Power Bracket"),
+            "total_games": st.column_config.NumberColumn("Matches Logged", format="%d"),
+            "avg_turns": st.column_config.NumberColumn("Avg Turn Count", format="Turn %.1f"),
+            "avg_duration": st.column_config.NumberColumn("Avg Duration", format="%d mins"),
+        },
+        hide_index=True,
+        use_container_width=True
+    )
+else:
+    st.info("No bracket data logged yet.")
