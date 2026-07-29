@@ -196,10 +196,23 @@ if tab_log:
             )
 
             st.divider()
+            
+            # --- PLAYER COUNT SELECTOR ---
+            col_p1, col_p2 = st.columns([1, 2])
+            with col_p1:
+                num_players = st.radio(
+                    "Number of Players",
+                    options=[4, 3],
+                    horizontal=True,
+                    index=0,
+                    help="Default is 4 players, but you can switch to 3 for a 3-player pod."
+                )
+
             st.subheader("Participants")
             participants_input = []
 
-            for seat in range(1, 5):
+            # Dynamically render seats based on selected player count
+            for seat in range(1, num_players + 1):
                 with st.expander(f"👤 Seat {seat}", expanded=(seat == 1)):
                     selected_player_name = st.selectbox(
                         "Player", 
@@ -257,9 +270,9 @@ if tab_log:
                 if not win_condition:
                     st.error("Please select a Win Condition.")
                 elif missing_players:
-                    st.error("Please select a player for all 4 seats.")
+                    st.error(f"Please select a player for all {num_players} seats.")
                 elif missing_decks:
-                    st.error("Please select a deck for all 4 seats.")
+                    st.error(f"Please select a deck for all {num_players} seats.")
                 elif winners_count != 1:
                     st.warning("Please mark exactly ONE player as the winner.")
                 else:
