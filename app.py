@@ -215,6 +215,36 @@ with tab_deck:
 # ==========================================
 # TAB 3: ANALYTICS DASHBOARD
 # ==========================================
+
+def format_mana_symbols(color_str):
+    """Converts a string like 'WUB' or 'Orzhov' into Scryfall SVG image URLs."""
+    if not color_str:
+        return ""
+    
+    # Standard MTG color code mapping
+    color_map = {
+        'W': 'W', 'U': 'U', 'B': 'B', 'R': 'R', 'G': 'G', 'C': 'C',
+        'WHITE': 'W', 'BLUE': 'U', 'BLACK': 'B', 'RED': 'R', 'GREEN': 'G',
+        'ORZHOV': 'WB', 'IZZET': 'UR', 'GOLGARI': 'BG', 'BOROS': 'WR', 'SIMIC': 'UG',
+        'AZORIUS': 'WU', 'DIMIR': 'UB', 'RAKDOS': 'BR', 'GRUUL': 'RG', 'SELESNYA': 'GW'
+    }
+    
+    # Parse input string into individual color characters
+    cleaned_str = color_str.upper()
+    
+    # If the database stored guild names instead of raw letters, map them
+    if cleaned_str in color_map and len(cleaned_str) > 1 and cleaned_str not in ['WUBRG']:
+        cleaned_str = color_map[cleaned_str]
+
+    # Build image URLs for each symbol (Scryfall CDN)
+    symbols = []
+    for char in cleaned_str:
+        if char in ['W', 'U', 'B', 'R', 'G', 'C']:
+            symbols.append(f"https://svgs.scryfall.io/card-symbols/{char}.svg")
+            
+    # Return the primary/first symbol URL for ImageColumn or list of URLs
+    return symbols[0] if symbols else ""
+
 with tab_stats:
     st.subheader("📊 Playgroup Operations & Metrics")
     
@@ -297,16 +327,24 @@ with tab_stats:
 
         st.divider()
 
-        # 3. Color Identity Performance (Full-Width Stacked)
+        # 3. Color Identity Performance (With MTG Mana Symbols)
         st.markdown("### 🎨 Color Identity Win Rates")
         color_stats = db.get_color_identity_stats()
         if color_stats:
             df_colors = pd.DataFrame([dict(row) for row in color_stats])
             df_colors['win_rate'] = (df_colors['wins'] / df_colors['games_played']) * 100
             
+            # Map color codes to Scryfall SVG URIs
+            df_colors['symbol_url'] = df_colors['color_identity'].apply(format_mana_symbols)
+            
             st.dataframe(
-                df_colors[['color_identity', 'games_played', 'wins', 'win_rate']],
+                df_colors[['symbol_url', 'color_identity', 'games_played', 'wins', 'win_rate']],
                 column_config={
+                    "symbol_url": st.column_config.ImageColumn(
+                        "Symbol",
+                        help="Official MTG Mana Symbol from Scryfall",
+                        width="small"
+                    ),
                     "color_identity": st.column_config.TextColumn("Color Identity"),
                     "games_played": st.column_config.NumberColumn("Played", format="%d"),
                     "wins": st.column_config.NumberColumn("Wins", format="%d"),
