@@ -210,22 +210,25 @@ if tab_deck:
                                 data = response.json()
                                 deck_name = data.get("name", "Untitled Moxfield Deck")
                                 commanders_dict = data.get("commanders", {})
-                                
+
                                 if not commanders_dict:
                                     st.error("No commander found in this Moxfield deck.")
                                 else:
                                     commander_ids = []
+                                    
+                                    # Iterate through all commanders (handles single or partner pairs)
                                     for comm_name, comm_data in commanders_dict.items():
-                                        colors = "".join(comm_data.get("card", {}).get("colors", []))
-                                        if not colors:
-                                            colors = "C"
-                                        comm_id = db.get_or_createcommander(comm_name, colors)
+                                        # Get raw colors list (e.g. ['W', 'B'])
+                                        raw_colors = comm_data.get("card", {}).get("colors", [])
+                                        color_str = "".join(raw_colors) if raw_colors else "C"
+                                        
+                                        # Save individual commander to DB
+                                        comm_id = db.get_or_create_commander(comm_name, color_str)
                                         commander_ids.append(comm_id)
                                     
-                                    owner_id = player_dict[owner_name]
+                                    # Save deck with list of commander IDs
                                     db.create_deck(owner_id, deck_name, commander_ids)
-                                    st.success(f"Successfully imported **{deck_name}**!")
-                                    st.balloons()
+
                             else:
                                 st.error(f"Failed to fetch deck from Moxfield (Error {response.status_code}).")
                         except Exception as e:

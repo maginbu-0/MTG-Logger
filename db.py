@@ -55,31 +55,42 @@ def fetch_commanders():
         return cur.fetchall()
 
 def fetch_player_decks(player_id):
+    """Fetches all decks for a player, formatting partner commanders as 'Comm A // Comm B'."""
+    query = """
+        SELECT 
+            d.deck_id,
+            d.deck_name,
+            STRING_AGG(c.name, ' // ') AS commander_names,
+            STRING_AGG(c.color_identity, '') AS composite_color_identity
+        FROM decks d
+        LEFT JOIN deck_commanders dc ON d.deck_id = dc.deck_id
+        LEFT JOIN commanders c ON dc.commander_id = c.commander_id
+        WHERE d.player_id = %s
+        GROUP BY d.deck_id, d.deck_name
+        ORDER BY d.deck_name;
+    """
     with get_db() as conn:
         cur = conn.cursor()
-        # Changed archived = 0 to archived = FALSE
-        cur.execute(
-            "SELECT deck_id, deck_name FROM decks WHERE player_id = %s AND archived = FALSE ORDER BY deck_name ASC;", 
-            (player_id,)
-        )
+        cur.execute(query, (player_id,))
         return cur.fetchall()
 
 def create_deck(player_id, deck_name, commander_ids):
+    """Creates a deck and links 1 or 2 commanders (partner commanders)."""
+    query_deck = "INSERT INTO decks (player_id, deck_name) VALUES (%s, %s) RETURNING deck_id;"
+    query_link = "INSERT INTO deck_commanders (deck_id, commander_id) VALUES (%s, %s);"
+    
     with get_db() as conn:
         cur = conn.cursor()
-        # Added RETURNING deck_id
-        cur.execute(
-            "INSERT INTO decks (player_id, deck_name) VALUES (%s, %s) RETURNING deck_id;", 
-            (player_id, deck_name)
-        )
+        cur.execute(query_deck, (player_id, deck_name))
         deck_id = cur.fetchone()['deck_id']
-
+        
+        # Link all commanders (handles single or partner commanders)
         for comm_id in commander_ids:
-            cur.execute(
-                "INSERT INTO deck_commanders (deck_id, commander_id) VALUES (%s, %s);", 
-                (deck_id, comm_id)
-            )
-    return deck_id
+            cur.execute(query_link, (deck_id, comm_id))
+            
+        return deck_id
+
+
 
 def log_game_session(game_data, participants):
     with get_db() as conn:
