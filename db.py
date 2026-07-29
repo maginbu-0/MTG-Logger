@@ -300,3 +300,55 @@ def update_deck_from_moxfield(deck_id, new_deck_name, commander_ids):
         cur.execute(query_clear_commanders, (deck_id,))
         for comm_id in commander_ids:
             cur.execute(query_add_commander, (deck_id, comm_id))
+
+
+def get_deck_ownership_stats():
+    """Returns the total number of registered decks per player."""
+    query = """
+        SELECT 
+            p.display_name AS player_name,
+            COUNT(d.deck_id) AS deck_count
+        FROM players p
+        LEFT JOIN decks d ON p.player_id = d.player_id
+        GROUP BY p.player_id, p.display_name
+        ORDER BY deck_count DESC, player_name ASC;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        return cur.fetchall()
+
+def get_color_presence_stats():
+    """Counts how many decks in the playgroup contain each individual MTG color."""
+    query = """
+        SELECT 
+            c.color_identity,
+            COUNT(DISTINCT d.deck_id) AS deck_count
+        FROM decks d
+        JOIN deck_commanders dc ON d.deck_id = dc.deck_id
+        JOIN commanders c ON dc.commander_id = c.commander_id
+        GROUP BY c.color_identity;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        return cur.fetchall()
+
+def get_all_deck_performance_stats():
+    """Fetches ALL registered decks, their owner, games played, wins, and win rates (defaults 0 for unused decks)."""
+    query = """
+        SELECT 
+            d.deck_name,
+            p.display_name AS owner_name,
+            COUNT(gp.game_id) AS games_played,
+            SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END) AS wins
+        FROM decks d
+        JOIN players p ON d.player_id = p.player_id
+        LEFT JOIN game_participants gp ON d.deck_id = gp.deck_id
+        GROUP BY d.deck_id, d.deck_name, p.display_name
+        ORDER BY games_played DESC, wins DESC, d.deck_name ASC;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        return cur.fetchall()

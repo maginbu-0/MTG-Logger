@@ -438,38 +438,93 @@ if tab_admin:
 with tab_stats:
     st.subheader("📊 Playgroup Operations & Metrics")
     
+    # 1. TOP METRICS & OVERVIEW
     raw_stats = db.get_player_stats()
+    all_decks = db.get_all_deck_performance_stats()
     
-    if not raw_stats:
-        st.info("No game data available yet. Log a match to see the dashboard!")
-    else:
-        df = pd.DataFrame([dict(row) for row in raw_stats])
-        df['win_rate'] = (df['wins'] / df['games_played']) * 100
-        
-        total_games_played = int(df['wins'].sum()) 
-        overview_data = db.get_game_overview_stats()
-        
-        avg_turns = 0
-        avg_duration = 0
-        if overview_data:
-            overview_df = pd.DataFrame([dict(row) for row in overview_data])
-            avg_turns = round(overview_df['avg_turns'].mean(), 1)
-            avg_duration = round(overview_df['avg_duration'].mean(), 0)
+    total_games_played = sum([dict(r)['wins'] for r in raw_stats]) if raw_stats else 0
+    total_registered_decks = len(all_decks) if all_decks else 0
+    
+    overview_data = db.get_game_overview_stats()
+    avg_turns = 0
+    avg_duration = 0
+    if overview_data:
+        overview_df = pd.DataFrame([dict(row) for row in overview_data])
+        avg_turns = round(overview_df['avg_turns'].mean(), 1)
+        avg_duration = round(overview_df['avg_duration'].mean(), 0)
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Total Matches", total_games_played)
-            st.metric("Avg Turn Count", f"Turn {avg_turns}" if avg_turns else "N/A")
-        with col2:
-            st.metric("Active Players", len(df))
-            st.metric("Avg Game Length", f"{int(avg_duration)} mins" if avg_duration else "N/A")
+    # 4-Metric Grid
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Total Matches Logged", total_games_played)
+        st.metric("Avg Turn Count", f"Turn {avg_turns}" if avg_turns else "N/A")
+    with col2:
+        st.metric("Total Decks Registered", total_registered_decks)
+        st.metric("Avg Game Length", f"{int(avg_duration)} mins" if avg_duration else "N/A")
+    
+    st.divider()
+
+    # 2. DECK OWNERSHIP & COLOR DISTRIBUTION (NEW)
+    st.markdown("### 🧮 Playgroup Arsenal & Deck Ownership")
+    col_ownership, col_colors = st.columns(2)
+
+    # Decks Owned per Player
+    with col_ownership:
+        st.markdown("#### 🃏 Decks Owned per Player")
+        ownership_stats = db.get_deck_ownership_stats()
+        if ownership_stats:
+            df_owners = pd.DataFrame([dict(row) for row in ownership_stats])
+            
+            st.dataframe(
+                df_owners[['player_name', 'deck_count']],
+                column_config={
+                    "player_name": st.column_config.TextColumn("Player"),
+                    "deck_count": st.column_config.NumberColumn("Decks Owned", format="%d 🎴"),
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+
+    # Color Distribution across all decks
+    with col_colors:
+        st.markdown("#### 🎨 Color Presence in Arsenal")
+        color_presence = db.get_color_presence_stats()
+        if color_presence:
+            # Aggregate individual WUBRG character presence across all commanders
+            color_counts = {'W': 0, 'U': 0, 'B': 0, 'R': 0, 'G': 0, 'C': 0}
+            for row in color_presence:
+                identity = str(row['color_identity']).upper()
+                count = row['deck_count']
+                for char in identity:
+                    if char in color_counts:
+                        color_counts[char] += count
+
+            symbol_map = {'W': '☀️ White', 'U': '💧 Blue', 'B': '💀 Black', 'R': '🔥 Red', 'G': '🌳 Green', 'C': '💎 Colorless'}
+            df_color_dist = pd.DataFrame([
+                {"color": symbol_map[k], "decks": v} 
+                for k, v in color_counts.items() if v > 0
+            ]).sort_values(by="decks", ascending=False)
+
+            st.dataframe(
+                df_color_dist,
+                column_config={
+                    "color": st.column_config.TextColumn("Color"),
+                    "decks": st.column_config.NumberColumn("Decks Featured In", format="%d"),
+                },
+                hide_index=True,
+                use_container_width=True
+            )
+
+    st.divider()
+
+    # 3. PLAYER LEADERBOARD
+    st.markdown("### 🏆 Player Leaderboard")
+    if raw_stats:
+        df_players = pd.DataFrame([dict(row) for row in raw_stats])
+        df_players['win_rate'] = (df_players['wins'] / df_players['games_played']) * 100
         
-        st.divider()
-        
-        # Player Leaderboard
-        st.markdown("### 🏆 Player Leaderboard")
         st.dataframe(
-            df[['display_name', 'games_played', 'wins', 'win_rate']],
+            df_players[['display_name', 'games_played', 'wins', 'win_rate']],
             column_config={
                 "display_name": st.column_config.TextColumn("Player Name"),
                 "games_played": st.column_config.NumberColumn("Matches Played", format="%d"),
@@ -485,69 +540,73 @@ with tab_stats:
             use_container_width=True
         )
 
-        st.divider()
+    st.divider()
+
+    # 4. ALL DECKS PERFORMANCE TABLE (WITH ZERO/NULL SAFETY)
+    st.markdown("### 🃏 Complete Deck Performance")
+    if all_decks:
+        df_decks = pd.DataFrame([dict(row) for row in all_decks])
         
-        # Deck Leaderboard
-        st.markdown("### 🃏 Deck Performance")
-        raw_deck_stats = db.get_deck_stats()
-        if raw_deck_stats:
-            df_decks = pd.DataFrame([dict(row) for row in raw_deck_stats])
-            df_decks['win_rate'] = (df_decks['wins'] / df_decks['games_played']) * 100
-            
-            st.dataframe(
-                df_decks[['deck_name', 'owner_name', 'games_played', 'wins', 'win_rate']],
-                column_config={
-                    "deck_name": st.column_config.TextColumn("Deck Name"),
-                    "owner_name": st.column_config.TextColumn("Pilot/Owner"),
-                    "games_played": st.column_config.NumberColumn("Played", format="%d"),
-                    "wins": st.column_config.NumberColumn("Wins", format="%d"),
-                    "win_rate": st.column_config.ProgressColumn(
-                        "Win Rate (%)",
-                        format="%.1f%%",
-                        min_value=0,
-                        max_value=100,
-                    ),
-                },
-                hide_index=True,
-                use_container_width=True
-            )
+        # Calculate win rate, safely treating 0 games as 0.0% win rate
+        df_decks['win_rate'] = df_decks.apply(
+            lambda r: (r['wins'] / r['games_played'] * 100) if r['games_played'] > 0 else 0.0, 
+            axis=1
+        )
+        
+        st.dataframe(
+            df_decks[['deck_name', 'owner_name', 'games_played', 'wins', 'win_rate']],
+            column_config={
+                "deck_name": st.column_config.TextColumn("Deck Name"),
+                "owner_name": st.column_config.TextColumn("Pilot / Owner"),
+                "games_played": st.column_config.NumberColumn("Played", format="%d"),
+                "wins": st.column_config.NumberColumn("Wins", format="%d"),
+                "win_rate": st.column_config.ProgressColumn(
+                    "Win Rate (%)",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+            },
+            hide_index=True,
+            use_container_width=True
+        )
 
-        st.divider()
+    st.divider()
 
-        # Color Identity Performance
-        st.markdown("### 🎨 Color Identity Win Rates")
-        color_stats = db.get_color_identity_stats()
-        if color_stats:
-            df_colors = pd.DataFrame([dict(row) for row in color_stats])
-            df_colors['win_rate'] = (df_colors['wins'] / df_colors['games_played']) * 100
-            
-            symbol_map = {
-                'W': '☀️', 'U': '💧', 'B': '💀', 'R': '🔥', 'G': '🌳', 'C': '💎',
-                'ORZHOV': '☀️💀', 'IZZET': '💧🔥', 'GOLGARI': '💀🌳', 'BOROS': '☀️🔥', 'SIMIC': '💧🌳',
-                'AZORIUS': '☀️💧', 'DIMIR': '💧💀', 'RAKDOS': '💀🔥', 'GRUUL': '🔥🌳', 'SELESNYA': '☀️🌳',
-                'ESPER': '☀️💧💀', 'BANT': '☀️💧🌳', 'GRIXIS': '💧💀🔥', 'JUND': '💀🔥🌳', 'NAYA': '☀️🔥🌳',
-                'ABZAN': '☀️💀🌳', 'JESKAI': '☀️💧🔥', 'SULTAI': '💧💀🔥', 'MARDU': '☀️💀🔥'
-            }
-            
-            def get_symbol_text(c):
-                cleaned = str(c).upper().strip()
-                return f"{symbol_map.get(cleaned, cleaned)} {cleaned}"
-            
-            df_colors['identity_display'] = df_colors['color_identity'].apply(get_symbol_text)
-            
-            st.dataframe(
-                df_colors[['identity_display', 'games_played', 'wins', 'win_rate']],
-                column_config={
-                    "identity_display": st.column_config.TextColumn("Color Identity"),
-                    "games_played": st.column_config.NumberColumn("Played", format="%d"),
-                    "wins": st.column_config.NumberColumn("Wins", format="%d"),
-                    "win_rate": st.column_config.ProgressColumn(
-                        "Win Rate (%)",
-                        format="%.1f%%",
-                        min_value=0,
-                        max_value=100,
-                    ),
-                },
-                hide_index=True,
-                use_container_width=True
-            )
+    # 5. COLOR IDENTITY WIN RATES
+    st.markdown("### 🎨 Color Identity Win Rates")
+    color_stats = db.get_color_identity_stats()
+    if color_stats:
+        df_colors = pd.DataFrame([dict(row) for row in color_stats])
+        df_colors['win_rate'] = (df_colors['wins'] / df_colors['games_played']) * 100
+        
+        symbol_map = {
+            'W': '☀️', 'U': '💧', 'B': '💀', 'R': '🔥', 'G': '🌳', 'C': '💎',
+            'ORZHOV': '☀️💀', 'IZZET': '💧🔥', 'GOLGARI': '💀🌳', 'BOROS': '☀️🔥', 'SIMIC': '💧🌳',
+            'AZORIUS': '☀️💧', 'DIMIR': '💧💀', 'RAKDOS': '💀🔥', 'GRUUL': '🔥🌳', 'SELESNYA': '☀️🌳',
+            'ESPER': '☀️💧💀', 'BANT': '☀️💧🌳', 'GRIXIS': '💧💀🔥', 'JUND': '💀🔥🌳', 'NAYA': '☀️🔥🌳',
+            'ABZAN': '☀️💀🌳', 'JESKAI': '☀️💧🔥', 'SULTAI': '💧💀🔥', 'MARDU': '☀️💀🔥'
+        }
+        
+        def get_symbol_text(c):
+            cleaned = str(c).upper().strip()
+            return f"{symbol_map.get(cleaned, cleaned)} {cleaned}"
+        
+        df_colors['identity_display'] = df_colors['color_identity'].apply(get_symbol_text)
+        
+        st.dataframe(
+            df_colors[['identity_display', 'games_played', 'wins', 'win_rate']],
+            column_config={
+                "identity_display": st.column_config.TextColumn("Color Identity"),
+                "games_played": st.column_config.NumberColumn("Played", format="%d"),
+                "wins": st.column_config.NumberColumn("Wins", format="%d"),
+                "win_rate": st.column_config.ProgressColumn(
+                    "Win Rate (%)",
+                    format="%.1f%%",
+                    min_value=0,
+                    max_value=100,
+                ),
+            },
+            hide_index=True,
+            use_container_width=True
+        )
