@@ -5,18 +5,29 @@ from dotenv import load_dotenv
 from contextlib import contextmanager
 import streamlit as st
 
-# 1. Load local .env if present
+# 1. Load local .env file if running locally
 load_dotenv()
 
-# 2. Prefer Streamlit Secrets (for Cloud), fall back to os.getenv (for Local)
-if "DATABASE_URL" in st.secrets:
-    DATABASE_URL = st.secrets["DATABASE_URL"]
-else:
+# 2. Safely resolve DATABASE_URL without throwing StreamlitSecretNotFoundError
+DATABASE_URL = None
+
+try:
+    if "DATABASE_URL" in st.secrets:
+        DATABASE_URL = st.secrets["DATABASE_URL"]
+except Exception:
+    # Failsafe if st.secrets is uninitialized or missing
+    pass
+
+# Fallback to local system environment variable / .env file
+if not DATABASE_URL:
     DATABASE_URL = os.getenv("DATABASE_URL")
 
 @contextmanager
 def get_db():
     """Context manager for Supabase PostgreSQL connection."""
+    if not DATABASE_URL:
+        raise ValueError("DATABASE_URL is not set in Streamlit Secrets or .env file.")
+        
     conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
     try:
         yield conn
