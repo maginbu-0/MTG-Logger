@@ -148,9 +148,9 @@ if tab_log:
                 
                 final_minutes = max(1, round(st.session_state.timer_elapsed_seconds / 60))
                 
-                # Set safe auto-fill values
-                st.session_state.auto_turns = st.session_state.live_turn_count
-                st.session_state.auto_duration = final_minutes
+                # Directly update widget session state keys
+                st.session_state["input_total_turns"] = int(st.session_state.live_turn_count)
+                st.session_state["input_duration"] = int(final_minutes)
                 
                 st.toast(f"Pushed {final_minutes} mins and Turn {st.session_state.live_turn_count} to form!", icon="⏱️")
                 st.rerun()
@@ -159,11 +159,11 @@ if tab_log:
     with tab_log:
         st.subheader("Match Details")
 
-        # Handle auto-filled values from the "End Match" button safely
-        if "auto_turns" not in st.session_state:
-            st.session_state.auto_turns = 8
-        if "auto_duration" not in st.session_state:
-            st.session_state.auto_duration = 45
+        # Initialize widget state keys with default values if not already present
+        if "input_total_turns" not in st.session_state:
+            st.session_state["input_total_turns"] = 8
+        if "input_duration" not in st.session_state:
+            st.session_state["input_duration"] = 45
 
         players = db.fetch_players()
         
@@ -179,7 +179,6 @@ if tab_log:
                     "Total Turns", 
                     min_value=1, 
                     max_value=50, 
-                    value=st.session_state.auto_turns,
                     key="input_total_turns"
                 )
             with col2:
@@ -187,7 +186,6 @@ if tab_log:
                     "Duration (mins)", 
                     min_value=1, 
                     max_value=500, 
-                    value=st.session_state.auto_duration,
                     key="input_duration"
                 )
 
