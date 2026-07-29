@@ -14,6 +14,35 @@ st.title("🛡️ Commander Tracker")
 
 tab_log, tab_deck, tab_stats = st.tabs(["⚔️ Log Match", "➕ Add Deck", "📊 Analytics"])
 
+
+def get_tight_mana_html(color_str):
+    """Generates tightly spaced MTG mana symbols like real card text."""
+    if not color_str:
+        return ""
+    
+    color_map = {
+        'ORZHOV': 'WB', 'IZZET': 'UR', 'GOLGARI': 'BG', 'BOROS': 'WR', 'SIMIC': 'UG',
+        'AZORIUS': 'WU', 'DIMIR': 'UB', 'RAKDOS': 'BR', 'GRUUL': 'RG', 'SELESNYA': 'GW',
+        'ESPER': 'WUB', 'BANT': 'GWU', 'GRIXIS': 'UBR', 'JUND': 'BRG', 'NAYA': 'RGW',
+        'ABZAN': 'WBG', 'JESKAI': 'URW', 'SULTAI': 'BGU', 'MARDU': 'RWB', 'TEMUR': 'GUR'
+    }
+    
+    cleaned_str = str(color_str).upper().strip()
+    if cleaned_str in color_map:
+        cleaned_str = color_map[cleaned_str]
+
+    symbols = [char for char in cleaned_str if char in ['W', 'U', 'B', 'R', 'G', 'C']]
+    if not symbols:
+        return cleaned_str
+
+    # Tight spacing using inline-flex and a subtle 2px gap (or slight overlap)
+    img_tags = "".join([
+        f'<img src="https://svgs.scryfall.io/card-symbols/{s}.svg" width="18" height="18" style="margin-right: -2px; vertical-align: middle;"/>'
+        for s in symbols
+    ])
+    
+    return f'<div style="display: inline-flex; align-items: center;">{img_tags}</div>'
+
 # ==========================================
 # TAB 1: LOG MATCH
 # ==========================================
@@ -330,49 +359,92 @@ with tab_stats:
 
         st.divider()
 
-        # 3. Color Identity Performance (Native Streamlit Mobile Grid)
+        # 3. Color Identity Performance (Native Styled Table)
         st.markdown("### 🎨 Color Identity Win Rates")
         color_stats = db.get_color_identity_stats()
         if color_stats:
             df_colors = pd.DataFrame([dict(row) for row in color_stats])
             df_colors['win_rate'] = (df_colors['wins'] / df_colors['games_played']) * 100
             
-            # Header Row
-            h1, h2, h3, h4 = st.columns([2, 1, 1, 3])
-            h1.markdown("**Identity**")
-            h2.markdown("**Played**")
-            h3.markdown("**Wins**")
-            h4.markdown("**Win Rate**")
-            st.divider()
-
-            # Data Rows
+            # Build Styled Table HTML matching st.dataframe theme
+            table_html = """
+            <style>
+                .mtg-table-container {
+                    border: 1px solid #262730;
+                    border-radius: 8px;
+                    overflow: hidden;
+                    background-color: #0e1117;
+                    margin-top: 10px;
+                }
+                .mtg-table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-family: inherit;
+                    font-size: 14px;
+                    color: #fafafa;
+                }
+                .mtg-table th {
+                    background-color: #161b22;
+                    padding: 10px 12px;
+                    text-align: left;
+                    font-weight: 600;
+                    border-bottom: 1px solid #262730;
+                    color: #8b949e;
+                }
+                .mtg-table td {
+                    padding: 10px 12px;
+                    border-bottom: 1px solid #262730;
+                    vertical-align: middle;
+                }
+                .mtg-table tr:last-child td {
+                    border-bottom: none;
+                }
+                .progress-bar-bg {
+                    background-color: #21262d;
+                    border-radius: 4px;
+                    height: 8px;
+                    width: 100%;
+                    overflow: hidden;
+                    display: inline-block;
+                }
+                .progress-bar-fill {
+                    background-color: #ff4b4b;
+                    height: 100%;
+                    border-radius: 4px;
+                }
+            </style>
+            <div class="mtg-table-container">
+                <table class="mtg-table">
+                    <thead>
+                        <tr>
+                            <th>Color Identity</th>
+                            <th style="text-align: center;">Played</th>
+                            <th style="text-align: center;">Wins</th>
+                            <th style="width: 40%;">Win Rate (%)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            """
+            
             for _, row in df_colors.iterrows():
-                c1, c2, c3, c4 = st.columns([2, 1, 1, 3])
+                mana_icons = get_tight_mana_html(row['color_identity'])
+                win_pct = row['win_rate']
                 
-                with c1:
-                    # Clean color mapping
-                    color_str = str(row['color_identity']).upper().strip()
-                    color_map = {
-                        'ORZHOV': 'WB', 'IZZET': 'UR', 'GOLGARI': 'BG', 'BOROS': 'WR', 'SIMIC': 'UG',
-                        'AZORIUS': 'WU', 'DIMIR': 'UB', 'RAKDOS': 'BR', 'GRUUL': 'RG', 'SELESNYA': 'GW',
-                        'ESPER': 'WUB', 'BANT': 'GWU', 'GRIXIS': 'UBR', 'JUND': 'BRG', 'NAYA': 'RGW',
-                        'ABZAN': 'WBG', 'JESKAI': 'URW', 'SULTAI': 'BGU', 'MARDU': 'RWB', 'TEMUR': 'GUR'
-                    }
-                    if color_str in color_map:
-                        color_str = color_map[color_str]
-                        
-                    symbols = [char for char in color_str if char in ['W', 'U', 'B', 'R', 'G', 'C']]
-                    
-                    # Render Mana Symbol SVGs side-by-side inside Streamlit columns
-                    if symbols:
-                        icon_cols = st.columns(len(symbols) + 1)
-                        for idx, sym in enumerate(symbols):
-                            icon_cols[idx].image(f"https://svgs.scryfall.io/card-symbols/{sym}.svg", width=20)
-                    else:
-                        st.write(color_str)
-
-                c2.write(f"{row['games_played']}")
-                c3.write(f"{row['wins']}")
-                
-                with c4:
-                    st.progress(int(row['win_rate']) / 100, text=f"{row['win_rate']:.1f}%")
+                table_html += f"""
+                <tr>
+                    <td>{mana_icons}</td>
+                    <td style="text-align: center;">{row['games_played']}</td>
+                    <td style="text-align: center;">{row['wins']}</td>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <div class="progress-bar-bg">
+                                <div class="progress-bar-fill" style="width: {win_pct}%;"></div>
+                            </div>
+                            <span style="font-size: 13px; font-weight: 500; min-width: 45px; text-align: right;">{win_pct:.1f}%</span>
+                        </div>
+                    </td>
+                </tr>
+                """
+            
+            table_html += "</tbody></table></div>"
+            st.markdown(table_html, unsafe_allow_html=True)
