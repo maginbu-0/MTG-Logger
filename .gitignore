@@ -1,0 +1,5 @@
+*.log
+.venv/
+credentials.json
+*.env
+.vscode/
