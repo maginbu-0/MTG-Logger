@@ -41,12 +41,11 @@ tab_log, tab_add_deck, tab_analytics = st.tabs([
 ])
 
 # ------------------------------------------------------------------------------
-# TAB 1: LOG MATCH (TABLE-READY UX)
+# TAB 1: LOG MATCH (DYNAMIC SELECTION FIX)
 # ------------------------------------------------------------------------------
 with tab_log:
     st.header("Log Match Details")
 
-    # Fetch reference data
     players = db.fetch_players()
     
     if not players:
@@ -55,100 +54,94 @@ with tab_log:
         player_dict = {p['display_name']: p['player_id'] for p in players}
         player_names = list(player_dict.keys())
 
-        with st.form("log_game_form", clear_on_submit=True):
-            # --- Match Header Info ---
-            st.subheader("1. Match Overview")
-            col1, col2 = st.columns(2)
-            with col1:
-                total_turns = st.number_input("Total Turns", min_value=1, max_value=30, value=8)
-                win_condition = st.selectbox(
-                    "Win Condition", 
-                    ["Combat Damage", "Commander Damage", "Combo / Alternate Win", "Concession", "Other"]
+        # --- 1. Match Overview Inputs ---
+        st.subheader("1. Match Overview")
+        col1, col2 = st.columns(2)
+        with col1:
+            total_turns = st.number_input("Total Turns", min_value=1, max_value=30, value=8)
+            win_condition = st.selectbox(
+                "Win Condition", 
+                ["Combat Damage", "Commander Damage", "Combo / Alternate Win", "Concession", "Other"]
+            )
+        with col2:
+            duration_minutes = st.number_input("Duration (Mins)", min_value=5, max_value=300, value=45, step=5)
+            num_players = st.selectbox("Number of Players", [4, 3, 5, 6], index=0)
+
+        st.divider()
+
+        # --- 2. Dynamic Participants Selection ---
+        st.subheader("2. Participants")
+        
+        participants_input = []
+        
+        for i in range(num_players):
+            st.markdown(f"**Seat {i+1}**")
+            p_col1, p_col2, p_col3, p_col4 = st.columns([2, 2, 1, 1])
+            
+            with p_col1:
+                default_idx = i if i < len(player_names) else 0
+                selected_player_name = st.selectbox(
+                    "Player", 
+                    player_names, 
+                    index=default_idx, 
+                    key=f"seat_{i}_player"
                 )
-            with col2:
-                duration_minutes = st.number_input("Duration (Mins)", min_value=5, max_value=300, value=45, step=5)
-                num_players = st.selectbox("Number of Players", [4, 3, 5, 6], index=0)
+                selected_player_id = player_dict[selected_player_name]
 
-            st.divider()
-
-            # --- Player & Deck Selections ---
-            st.subheader("2. Participants")
-            
-            participants_input = []
-            
-            # Dynamically render participant rows based on selected player count
-            for i in range(num_players):
-                st.markdown(f"**Seat {i+1}**")
-                p_col1, p_col2, p_col3, p_col4 = st.columns([2, 2, 1, 1])
+            with p_col2:
+                # Fetch decks live outside of st.form so selecting a player updates decks instantly
+                user_decks = db.fetch_player_decks(selected_player_id)
+                deck_options = {d['deck_name']: d['deck_id'] for d in user_decks}
                 
-                with p_col1:
-                    # Select Player (Defaulting different players per seat if possible)
-                    default_idx = i if i < len(player_names) else 0
-                    selected_player_name = st.selectbox(
-                        "Player", 
-                        player_names, 
-                        index=default_idx, 
-                        key=f"seat_{i}_player"
+                if deck_options:
+                    selected_deck_name = st.selectbox(
+                        "Deck", 
+                        list(deck_options.keys()), 
+                        key=f"seat_{i}_deck"
                     )
-                    selected_player_id = player_dict[selected_player_name]
-
-                with p_col2:
-                    # Fetch decks for selected player
-                    user_decks = db.fetch_player_decks(selected_player_id)
-                    deck_options = {d['deck_name']: d['deck_id'] for d in user_decks}
-                    
-                    if deck_options:
-                        selected_deck_name = st.selectbox(
-                            "Deck", 
-                            list(deck_options.keys()), 
-                            key=f"seat_{i}_deck"
-                        )
-                        selected_deck_id = deck_options[selected_deck_name]
-                    else:
-                        st.selectbox("Deck", ["No Decks Found"], disabled=True, key=f"seat_{i}_deck_disabled")
-                        selected_deck_id = None
-
-                with p_col3:
-                    mulligans = st.number_input("Mulls", min_value=0, max_value=7, value=0, key=f"seat_{i}_mull")
-
-                with p_col4:
-                    is_winner = st.checkbox("Winner?", key=f"seat_{i}_win")
-
-                participants_input.append({
-                    "seat_position": i + 1,
-                    "player_id": selected_player_id,
-                    "deck_id": selected_deck_id,
-                    "mulligan_count": mulligans,
-                    "is_winner": is_winner
-                })
-
-            st.divider()
-
-            # --- Match Notes ---
-            notes = st.text_input("Match Notes (Optional)", placeholder="e.g., Turn 7 Craterhoof / Orzhov player had great board control")
-            
-            # --- Submit Button ---
-            submit_log = st.form_submit_button("⚔️ Save Game Session")
-            
-            if submit_log:
-                # Validation checks
-                missing_decks = [p for p in participants_input if p['deck_id'] is None]
-                winners = [p for p in participants_input if p['is_winner']]
-
-                if missing_decks:
-                    st.error("Every player must have a valid deck selected!")
-                elif len(winners) == 0:
-                    st.error("Please mark at least one winner for the match!")
+                    selected_deck_id = deck_options[selected_deck_name]
                 else:
-                    game_data = {
-                        "total_turns": total_turns,
-                        "duration_minutes": duration_minutes,
-                        "win_condition": win_condition,
-                        "notes": notes
-                    }
-                    game_id = db.log_game_session(game_data, participants_input)
-                    st.toast(f"🎉 Game #{game_id} logged successfully!", icon="✅")
-                    st.success("Match saved to database!")
+                    st.selectbox("Deck", ["No Decks Found"], disabled=True, key=f"seat_{i}_deck_disabled")
+                    selected_deck_id = None
+
+            with p_col3:
+                mulligans = st.number_input("Mulls", min_value=0, max_value=7, value=0, key=f"seat_{i}_mull")
+
+            with p_col4:
+                is_winner = st.checkbox("Winner?", key=f"seat_{i}_win")
+
+            participants_input.append({
+                "seat_position": i + 1,
+                "player_id": selected_player_id,
+                "deck_id": selected_deck_id,
+                "mulligan_count": mulligans,
+                "is_winner": is_winner
+            })
+
+        st.divider()
+
+        # --- 3. Match Notes & Action ---
+        notes = st.text_input("Match Notes (Optional)", placeholder="e.g., Turn 7 Craterhoof / Orzhov player had great board control")
+        
+        st.write("") # Padding
+        if st.button("⚔️ Save Game Session", type="primary"):
+            missing_decks = [p for p in participants_input if p['deck_id'] is None]
+            winners = [p for p in participants_input if p['is_winner']]
+
+            if missing_decks:
+                st.error("Every player must have a valid deck selected!")
+            elif len(winners) == 0:
+                st.error("Please mark at least one winner for the match!")
+            else:
+                game_data = {
+                    "total_turns": total_turns,
+                    "duration_minutes": duration_minutes,
+                    "win_condition": win_condition,
+                    "notes": notes
+                }
+                game_id = db.log_game_session(game_data, participants_input)
+                st.toast(f"🎉 Game #{game_id} logged successfully!", icon="✅")
+                st.success("Match saved to database!")
 
 # ------------------------------------------------------------------------------
 # TAB 2: ADD DECK (MOXFIELD IMPORT / MANUAL)
