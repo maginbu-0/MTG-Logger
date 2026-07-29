@@ -191,34 +191,17 @@ if tab_log:
                 game_medium = st.selectbox(
                     "Platform / Medium",
                     options=["In Person 🃏", "Convoke 💻", "SpellTable 📹"],
-                    index=0,  # Defaults to In Person
+                    index=0,
                     key="input_medium"
                 )
 
-            # ... inside save block ...
-            game_data = {
-                "total_turns": total_turns,
-                "duration_minutes": duration,
-                "win_condition": win_condition,
-                "notes": notes,
-                "bracket": bracket_level,
-                "medium": game_medium
-            }
-
-            # Add "input_medium" to keys_to_delete when resetting session state:
-            keys_to_delete = ["input_total_turns", "input_duration", "input_bracket", "input_medium", "input_win_condition", "input_match_notes"]
-
-            
             win_condition = st.selectbox(
                 "Win Condition",
                 ["Combat Damage", "Infinite Combo", "Alternate Win-Con", "Commander Damage", "Scoop / Surrender"],
                 index=None,
-                placeholder="How did it end?"
+                placeholder="How did it end?",
+                key="input_win_condition"
             )
-
-            # --- INITIALIZE REMATCH/CLEAR FORM STATE ---
-            if "rematch_mode" not in st.session_state:
-                st.session_state.rematch_mode = False
 
             st.divider()
             
@@ -235,7 +218,6 @@ if tab_log:
             st.subheader("Participants")
             participants_input = []
 
-            # Dynamically render seats based on selected player count
             for seat in range(1, num_players + 1):
                 with st.expander(f"👤 Seat {seat}", expanded=(seat == 1)):
                     selected_player_name = st.selectbox(
@@ -285,14 +267,13 @@ if tab_log:
 
             notes = st.text_input("Match Notes (Optional)", placeholder="e.g. Turn 6 Rhystic Study went unanswered", key="input_match_notes")
             
-            # --- TWO ACTION BUTTONS ---
+            # --- ACTION BUTTONS ---
             col_save1, col_save2 = st.columns(2)
             with col_save1:
                 submit_match = st.button("💾 Save Game Log (Clear Form)", use_container_width=True, type="primary")
             with col_save2:
                 rematch_submit = st.button("🔁 Save & Rematch (Keep Pod/Decks)", use_container_width=True, type="secondary")
 
-            # Shared Save Function
             if submit_match or rematch_submit:
                 missing_players = any(p['player_id'] is None for p in participants_input)
                 missing_decks = any(p['deck_id'] is None for p in participants_input)
@@ -312,21 +293,21 @@ if tab_log:
                         "duration_minutes": duration,
                         "win_condition": win_condition,
                         "notes": notes,
-                        "bracket": bracket_level
+                        "bracket": bracket_level,
+                        "medium": game_medium
                     }
                     db.log_game_session(game_data, participants_input)
                     
-                    # 1. Reset Live Companion Timer & Turns
+                    # Reset Live Companion Timer & Turns
                     st.session_state.timer_running = False
                     st.session_state.timer_start_time = None
                     st.session_state.timer_elapsed_seconds = 0
                     st.session_state.live_turn_count = 1
 
-                    # 2. Safely delete active widget keys so Streamlit resets them on rerun
-                    keys_to_delete = ["input_total_turns", "input_duration", "input_win_condition", "input_match_notes"]
+                    # Clean active keys so Streamlit recreates widgets safely on rerun
+                    keys_to_delete = ["input_total_turns", "input_duration", "input_bracket", "input_medium", "input_win_condition", "input_match_notes"]
 
                     if submit_match:
-                        # Full Clear: delete seats + inputs
                         for seat in range(1, 5):
                             keys_to_delete.extend([
                                 f"seat_player_{seat}",
@@ -337,7 +318,6 @@ if tab_log:
                         st.toast("Game logged & form cleared!", icon="🧹")
 
                     elif rematch_submit:
-                        # Rematch: keep seats/decks, only delete winner checkboxes, mulligans, win con & notes
                         for seat in range(1, 5):
                             keys_to_delete.extend([
                                 f"seat_mull_{seat}",
@@ -345,7 +325,6 @@ if tab_log:
                             ])
                         st.toast("Game logged! Ready for Rematch with same pod!", icon="🔁")
 
-                    # Delete keys safely if they exist in session_state
                     for k in keys_to_delete:
                         if k in st.session_state:
                             del st.session_state[k]
@@ -459,7 +438,7 @@ if tab_admin:
             st.success(f"🎉 Player **{added_name}** was added successfully!")
             st.toast(f"Added '{added_name}'!", icon="👤")
 
-        # Expander 1: Add / Remove Players
+        # Manage Players
         with st.expander("👤 Manage Players (Add / Delete)", expanded=False):
             col_add, col_del = st.columns(2)
             
@@ -505,7 +484,7 @@ if tab_admin:
                         else:
                             st.error("Please select a player to remove.")
 
-        # Expander 2: Upgrade / Link Manual Deck to Moxfield
+        # Link Manual Deck to Moxfield
         with st.expander("🔗 Upgrade Manual Deck to Moxfield", expanded=False):
             st.markdown("Select a player and deck to sync or re-import from a Moxfield link:")
             players = db.fetch_players()
@@ -566,7 +545,7 @@ if tab_admin:
                     else:
                         st.info("This player has no registered decks.")
 
-        # Expander 3: View Registered Decks
+        # View Registered Decks
         with st.expander("🃏 View Registered Players & Decks", expanded=False):
             all_decks = db.fetch_all_decks_with_owners()
             if all_decks:
@@ -584,7 +563,7 @@ if tab_admin:
             else:
                 st.info("No decks registered in the database yet.")
 
-        # Expander 4: Delete Matches
+        # Delete Matches
         with st.expander("🗑️ Match Management (Delete Matches)", expanded=False):
             st.markdown("Select a game session to delete from database logs:")
             recent_games = db.fetch_recent_games(limit=20)
@@ -764,7 +743,6 @@ with tab_stats:
             'WUBRG': '5-Color'
         }
         
-        # 1. Helper function to normalize color identity into canonical WUBRG order
         def normalize_color_identity(color_raw):
             if not color_raw:
                 return "C"
@@ -775,19 +753,15 @@ with tab_stats:
             )
             return "".join(sorted_chars)
 
-        # 2. Apply canonical normalization (e.g. 'RU' -> 'UR')
         df_colors['canonical_color'] = df_colors['color_identity'].apply(normalize_color_identity)
         
-        # 3. GROUP BY canonical color identity and aggregate totals across ALL decks
         df_grouped_colors = df_colors.groupby('canonical_color', as_index=False).agg({
             'games_played': 'sum',
             'wins': 'sum'
         })
         
-        # 4. Calculate consolidated win rate
         df_grouped_colors['win_rate'] = (df_grouped_colors['wins'] / df_grouped_colors['games_played']) * 100
         
-        # 5. Format display name with emojis and guild/shard names
         def format_color_identity(clean_code):
             if clean_code == "C":
                 return "💎 Colorless"
@@ -796,8 +770,6 @@ with tab_stats:
             return f"{emojis} {name}"
             
         df_grouped_colors['identity_display'] = df_grouped_colors['canonical_color'].apply(format_color_identity)
-        
-        # Sort by Win Rate descending, then Games Played descending
         df_grouped_colors = df_grouped_colors.sort_values(by=['win_rate', 'games_played'], ascending=[False, False])
         
         st.dataframe(
@@ -819,22 +791,18 @@ with tab_stats:
 
     st.divider()
 
-   # 6. BRACKET PERFORMANCE & DISTRIBUTION
+    # 6. BRACKET PERFORMANCE & DISTRIBUTION
     st.markdown("### 🎯 Bracket Distribution & Game Velocity")
     if hasattr(db, 'get_bracket_stats'):
         bracket_data = db.get_bracket_stats()
         if bracket_data:
             df_bracket = pd.DataFrame([dict(row) for row in bracket_data])
             
-            # --- FORCE FLOAT & DECIMAL CONVERSION ---
-            # 1. Convert to string and clean out quotes/slashes
             df_bracket['avg_turns'] = df_bracket['avg_turns'].astype(str).str.replace(r'["\\]', '', regex=True)
             
-            # 2. If the value is '65' or '30', convert it to a float decimal (6.5, 3.0)
             def clean_to_float(val):
                 try:
                     f = float(val)
-                    # If the database returned whole tens (like 65 or 30 instead of 6.5 or 3.0), adjust by dividing by 10
                     if f > 20:  
                         f = f / 10.0
                     return f
@@ -855,7 +823,6 @@ with tab_stats:
                 
             with col_b_chart2:
                 st.markdown("#### ⚡ Average Turns by Bracket")
-                # Set explicit float y-axis plotting
                 st.bar_chart(df_bracket, x='bracket_label', y='avg_turns', color='#29b5e8')
                 
             st.dataframe(
@@ -871,3 +838,25 @@ with tab_stats:
             )
         else:
             st.info("No bracket data logged yet.")
+
+    # 7. PLATFORM / MEDIUM DISTRIBUTION
+    if hasattr(db, 'get_medium_stats'):
+        st.divider()
+        st.markdown("### 🌐 Game Platform Distribution")
+        medium_data = db.get_medium_stats()
+        if medium_data:
+            df_medium = pd.DataFrame([dict(row) for row in medium_data])
+            col_m1, col_m2 = st.columns(2)
+            with col_m1:
+                st.dataframe(
+                    df_medium[['medium', 'total_games', 'avg_duration']],
+                    column_config={
+                        "medium": st.column_config.TextColumn("Platform / Medium"),
+                        "total_games": st.column_config.NumberColumn("Matches Logged", format="%d"),
+                        "avg_duration": st.column_config.NumberColumn("Avg Game Length", format="%d mins"),
+                    },
+                    hide_index=True,
+                    use_container_width=True
+                )
+            with col_m2:
+                st.bar_chart(df_medium, x='medium', y='total_games', color='#9061f9')
