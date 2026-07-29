@@ -270,7 +270,6 @@ if tab_log:
                         "win_condition": win_condition,
                         "notes": notes
                     }
-                    db.log_game_session(game_data, participants_input)
 
                     if submit_match:
                         missing_players = any(p['player_id'] is None for p in participants_input)
