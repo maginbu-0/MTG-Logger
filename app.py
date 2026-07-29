@@ -141,18 +141,16 @@ if tab_log:
             
             # --- END MATCH & AUTO-FILL BUTTON ---
             if st.button("🏁 End Match & Auto-Fill Form", type="primary", use_container_width=True, key="btn_end_match"):
-                # Stop timer and snapshot elapsed time
                 if st.session_state.timer_running and st.session_state.timer_start_time is not None:
                     st.session_state.timer_elapsed_seconds += int(time.time() - st.session_state.timer_start_time)
                     st.session_state.timer_running = False
                     st.session_state.timer_start_time = None
                 
-                # Convert seconds to total minutes (rounded up to minimum 1 min)
                 final_minutes = max(1, round(st.session_state.timer_elapsed_seconds / 60))
                 
-                # Push values to form input session keys
-                st.session_state["total_turns_input"] = st.session_state.live_turn_count
-                st.session_state["duration_input"] = final_minutes
+                # Set safe auto-fill values
+                st.session_state.auto_turns = st.session_state.live_turn_count
+                st.session_state.auto_duration = final_minutes
                 
                 st.toast(f"Pushed {final_minutes} mins and Turn {st.session_state.live_turn_count} to form!", icon="⏱️")
                 st.rerun()
@@ -160,6 +158,13 @@ if tab_log:
 if tab_log:
     with tab_log:
         st.subheader("Match Details")
+
+        # Handle auto-filled values from the "End Match" button safely
+        if "auto_turns" not in st.session_state:
+            st.session_state.auto_turns = 8
+        if "auto_duration" not in st.session_state:
+            st.session_state.auto_duration = 45
+
         players = db.fetch_players()
         
         if not players:
@@ -168,26 +173,22 @@ if tab_log:
             player_dict = {p['display_name']: p['player_id'] for p in players}
             player_names = list(player_dict.keys())
 
-            # Initialize default form values if not set by timer
-        if "total_turns_input" not in st.session_state:
-            st.session_state["total_turns_input"] = 8
-        if "duration_input" not in st.session_state:
-            st.session_state["duration_input"] = 45
-
             col1, col2 = st.columns(2)
             with col1:
                 total_turns = st.number_input(
                     "Total Turns", 
                     min_value=1, 
                     max_value=50, 
-                    key="total_turns_input"
+                    value=st.session_state.auto_turns,
+                    key="input_total_turns"
                 )
             with col2:
                 duration = st.number_input(
                     "Duration (mins)", 
                     min_value=1, 
                     max_value=500, 
-                    key="duration_input"
+                    value=st.session_state.auto_duration,
+                    key="input_duration"
                 )
 
             win_condition = st.selectbox(
