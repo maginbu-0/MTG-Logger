@@ -722,19 +722,49 @@ with tab_stats:
         df_colors = pd.DataFrame([dict(row) for row in color_stats])
         df_colors['win_rate'] = (df_colors['wins'] / df_colors['games_played']) * 100
         
-        symbol_map = {
-            'W': '☀️', 'U': '💧', 'B': '💀', 'R': '🔥', 'G': '🌳', 'C': '💎',
-            'ORZHOV': '☀️💀', 'IZZET': '💧🔥', 'GOLGARI': '💀🌳', 'BOROS': '☀️🔥', 'SIMIC': '💧🌳',
-            'AZORIUS': '☀️💧', 'DIMIR': '💧💀', 'RAKDOS': '💀🔥', 'GRUUL': '🔥🌳', 'SELESNYA': '☀️🌳',
-            'ESPER': '☀️💧💀', 'BANT': '☀️💧🌳', 'GRIXIS': '💧💀🔥', 'JUND': '💀🔥🌳', 'NAYA': '☀️🔥🌳',
-            'ABZAN': '☀️💀🌳', 'JESKAI': '☀️💧🔥', 'SULTAI': '💧💀🔥', 'MARDU': '☀️💀🔥'
+        # Individual Mana Symbols
+        mana_icons = {
+            'W': '☀️',
+            'U': '💧',
+            'B': '💀',
+            'R': '🔥',
+            'G': '🌳',
+            'C': '💎'
         }
         
-        def get_symbol_text(c):
-            cleaned = str(c).upper().strip()
-            return f"{symbol_map.get(cleaned, cleaned)} {cleaned}"
+        # Guild / Combination Names
+        guild_names = {
+            'W': 'Mono White', 'U': 'Mono Blue', 'B': 'Mono Black', 'R': 'Mono Red', 'G': 'Mono Green', 'C': 'Colorless',
+            'WU': 'Azorius', 'UB': 'Dimir', 'BR': 'Rakdos', 'RG': 'Gruul', 'GW': 'Selesnya',
+            'WB': 'Orzhov', 'UR': 'Izzet', 'BG': 'Golgari', 'RW': 'Boros', 'GU': 'Simic',
+            'GWU': 'Bant', 'WUB': 'Esper', 'UBR': 'Grixis', 'BRG': 'Jund', 'RGW': 'Naya',
+            'WBG': 'Abzan', 'URW': 'Jeskai', 'BGU': 'Sultai', 'RWB': 'Mardu', 'GUR': 'Temur',
+            'UBRG': 'Yidris', 'BRGW': 'Saskia', 'RGWU': 'Kynaios and Tiro', 'GWUB': 'Atraxa', 'WUBR': 'Breya',
+            'WUBRG': '5-Color'
+        }
         
-        df_colors['identity_display'] = df_colors['color_identity'].apply(get_symbol_text)
+        def format_color_identity(color_raw):
+            if not color_raw:
+                return "💎 Colorless"
+                
+            # Normalize and sort WUBRG order for consistent lookups
+            wubrg_order = "WUBRG"
+            sorted_chars = sorted(
+                str(color_raw).upper().strip(), 
+                key=lambda x: wubrg_order.find(x) if x in wubrg_order else 99
+            )
+            
+            clean_code = "".join(sorted_chars)
+            
+            # Map emojis (e.g., ['💧', '💀', '🔥'])
+            emojis = "".join([mana_icons.get(char, '') for char in clean_code])
+            
+            # Get guild/shard name if available
+            name = guild_names.get(clean_code, clean_code)
+            
+            return f"{emojis} {name}"
+        
+        df_colors['identity_display'] = df_colors['color_identity'].apply(format_color_identity)
         
         st.dataframe(
             df_colors[['identity_display', 'games_played', 'wins', 'win_rate']],
