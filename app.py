@@ -709,24 +709,37 @@ if tab_admin_matches:
         st.subheader("✏️ Match Management & Editing")
 
         # 1. EDIT LOGGED MATCHES & PARTICIPANTS
-        with st.expander("✏️ Edit Logged Matches & Participants", expanded=False):
-            st.markdown("Select a game session to modify its details, seats, assigned decks, or borrowed status:")
+        with st.expander("✏️ Edit Logged Matches & Participants", expanded=True):
+            st.markdown("Filter by date to view and modify game sessions:")
             
-            recent_games = db.fetch_recent_games(limit=25)
+            import datetime
             
-            if recent_games:
+            col_filter1, col_filter2 = st.columns([1, 2])
+            with col_filter1:
+                filter_date = st.date_input("Filter Matches by Date", value=datetime.date.today(), key="admin_edit_match_date")
+            
+            # Fetch games for chosen date
+            games_for_date = db.fetch_games_by_date(filter_date) if hasattr(db, 'fetch_games_by_date') else db.fetch_recent_games(limit=25)
+            
+            if games_for_date:
                 game_options = {}
-                for g in recent_games:
+                for g in games_for_date:
                     label = f"Game #{g['game_id']} | Turns: {g['total_turns']} | Win: {g['win_condition']} ({g['participants']})"
                     game_options[label] = g['game_id']
                 
-                selected_edit_game_label = st.selectbox("Select Match to Edit", list(game_options.keys()), index=None, key="admin_select_match_edit")
+                with col_filter2:
+                    selected_edit_game_label = st.selectbox(
+                        f"Select Match from {filter_date.strftime('%b %d, %Y')}", 
+                        list(game_options.keys()), 
+                        index=0 if len(game_options) == 1 else None, 
+                        key=f"admin_select_match_edit_{filter_date}"
+                    )
                 
                 if selected_edit_game_label:
                     game_to_edit_id = game_options[selected_edit_game_label]
                     
                     # Fetch existing game and seat data
-                    game_data = next((g for g in recent_games if g['game_id'] == game_to_edit_id), None)
+                    game_data = next((g for g in games_for_date if g['game_id'] == game_to_edit_id), None)
                     seat_participants = db.fetch_game_participants(game_to_edit_id)
                     all_global_decks = db.fetch_all_decks_with_owners() if hasattr(db, 'fetch_all_decks_with_owners') else []
                     players = db.fetch_players()
@@ -760,37 +773,31 @@ if tab_admin_matches:
                         st.markdown("#### 2. Seats & Decks (Retroactive Fixes)")
                         updated_seats = []
 
-                        # Map deck IDs to deck details for easy lookup
                         global_deck_map = {d['deck_id']: d for d in all_global_decks} if all_global_decks else {}
 
                         for idx, seat in enumerate(seat_participants, start=1):
                             seat_dict = dict(seat)
                             
-                            # Handle dynamic ID field names
                             part_id = seat_dict.get('participant_id', seat_dict.get('id', idx))
                             s_pos = seat_dict.get('seat_number', seat_dict.get('seat_position', seat_dict.get('seat', idx)))
                             p_id = seat_dict.get('player_id')
                             d_id = seat_dict.get('deck_id')
                             
-                            # Get current deck info to determine original ownership
                             curr_deck_info = global_deck_map.get(d_id, {})
                             deck_owner_id = curr_deck_info.get('owner_id')
                             curr_deck_name = curr_deck_info.get('deck_name', 'Unknown Deck')
                             
-                            # Get current player display name
                             curr_p_name = next((name for name, pid in player_dict.items() if pid == p_id), "Select Player")
 
                             is_currently_borrowed = (p_id != deck_owner_id) if deck_owner_id else False
 
                             with st.expander(f"👤 Seat {s_pos}: {curr_p_name} ({'🎁 Borrowed Deck' if is_currently_borrowed else 'Owned Deck'})", expanded=True):
-                                # Player Selection
                                 player_names = list(player_dict.keys())
                                 p_idx = player_names.index(curr_p_name) if curr_p_name in player_names else 0
                                 
                                 new_seat_player = st.selectbox("Player", player_names, index=p_idx, key=f"edit_p_seat_{part_id}_{idx}")
                                 new_seat_player_id = player_dict[new_seat_player]
 
-                                # Borrowed deck toggle override
                                 edit_borrowing = st.checkbox("🎁 Was this a borrowed deck?", value=is_currently_borrowed, key=f"edit_borrow_chk_{part_id}_{idx}")
 
                                 if edit_borrowing:
@@ -837,7 +844,6 @@ if tab_admin_matches:
                             elif missing_decks:
                                 st.error("Please ensure a valid deck is assigned to all seats.")
                             else:
-                                # Cleanly update game and re-insert participants in one atomic transaction
                                 db.update_full_game_match(
                                     game_id=game_to_edit_id,
                                     total_turns=edit_turns,
@@ -852,7 +858,7 @@ if tab_admin_matches:
                                 st.success("Match record updated!")
                                 st.rerun()
             else:
-                st.info("No logged matches found.")
+                st.info(f"No logged matches found on {filter_date.strftime('%B %d, %Y')}.")
 
         # 2. DELETE MATCHES
         with st.expander("🗑️ Delete Matches", expanded=False):

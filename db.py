@@ -576,3 +576,29 @@ def fetch_last_n_games_detailed(limit=2):
             detailed_games.append(g_dict)
             
         return detailed_games
+
+def fetch_games_by_date(selected_date):
+    """Fetches games logged on a specific date (defaults to today)."""
+    query = """
+        SELECT 
+            g.game_id,
+            g.total_turns,
+            g.win_condition,
+            COALESCE(g.notes, '') AS notes,
+            STRING_AGG(p.display_name, ', ' ORDER BY gp.seat_position) AS participants
+        FROM games g
+        JOIN game_participants gp ON g.game_id = gp.game_id
+        JOIN players p ON gp.player_id = p.player_id
+        WHERE DATE(g.created_at) = %s
+        GROUP BY g.game_id, g.total_turns, g.win_condition, g.notes
+        ORDER BY g.game_id DESC;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute(query, (selected_date,))
+            return cur.fetchall()
+        except Exception:
+            # Fallback if created_at column doesn't exist, fetches by raw game_id ordering
+            conn.rollback()
+            return fetch_recent_games(limit=25)
