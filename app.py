@@ -891,6 +891,7 @@ with tab_stats:
     # 1. TOP METRICS & OVERVIEW
     raw_stats = db.get_player_stats()
     all_decks = db.get_all_deck_performance_stats()
+    most_common_bracket = db.get_most_common_deck_bracket() if hasattr(db, 'get_most_common_deck_bracket') else "N/A"
     
     total_games_played = db.get_total_games_count() if hasattr(db, 'get_total_games_count') else (sum([dict(r)['wins'] for r in raw_stats]) if raw_stats else 0)
     total_registered_decks = len(all_decks) if all_decks else 0
@@ -903,18 +904,55 @@ with tab_stats:
         avg_turns = round(overview_df['avg_turns'].mean(), 1)
         avg_duration = round(overview_df['avg_duration'].mean(), 0)
 
-    # Overview Metrics Grid
-    col_m1, col_m2 = st.columns(2)
+    # Overview Metrics Grid (3 columns)
+    col_m1, col_m2, col_m3 = st.columns(3)
     with col_m1:
         st.metric("Total Matches Logged", total_games_played)
         st.metric("Avg Turn Count", f"Turn {avg_turns}" if avg_turns else "N/A")
     with col_m2:
         st.metric("Total Decks Registered", total_registered_decks)
         st.metric("Avg Game Length", f"{int(avg_duration)} mins" if avg_duration else "N/A")
+    with col_m3:
+        st.metric("Most Played Fleet Bracket", most_common_bracket)
     
     st.divider()
 
-    # 2. DECK OWNERSHIP & COLOR DISTRIBUTION
+    # 2 📜 RECENT MATCHES CARD LOG
+    st.markdown("### 📜 Last 2 Matches Logged")
+    recent_2_games = db.fetch_last_n_games_detailed(limit=2) if hasattr(db, 'fetch_last_n_games_detailed') else []
+    
+    if recent_2_games:
+        for g in recent_2_games:
+            winner_name = next((s['player_name'] for s in g['seats'] if s['is_winner']), "Unknown")
+            winner_deck = next((s['deck_name'] for s in g['seats'] if s['is_winner']), "Unknown Deck")
+            
+            with st.expander(f"🏆 Game #{g['game_id']} Winner: {winner_name} ({winner_deck}) — {g['win_condition']}", expanded=True):
+                sc1, sc2, sc3 = st.columns(3)
+                with sc1:
+                    st.caption(f"⏱️ **Duration:** {g['duration_minutes']} mins | **Turns:** Turn {g['total_turns']}")
+                with sc2:
+                    st.caption(f"🎯 **Game Bracket:** Bracket {g.get('bracket', 3)} | **Platform:** {g.get('medium', 'In Person')}")
+                with sc3:
+                    if g['notes']:
+                        st.caption(f"📝 **Notes:** {g['notes']}")
+
+                # Seat Table
+                seat_rows = []
+                for s in g['seats']:
+                    seat_rows.append({
+                        "Seat": f"Seat {s['seat_position']}",
+                        "Player": s['player_name'],
+                        "Deck Played": f"{s['deck_name']} (⚡ B{s['deck_bracket']})",
+                        "Mulligans": s['mulligan_count'],
+                        "Result": "🏆 WINNER" if s['is_winner'] else "❌ Defeat"
+                    })
+                st.dataframe(pd.DataFrame(seat_rows), hide_index=True, use_container_width=True)
+    else:
+        st.info("No recent matches found.")
+
+    st.divider()
+
+    # 3. DECK OWNERSHIP & COLOR DISTRIBUTION
     st.markdown("### 🧮 Playgroup Arsenal & Deck Ownership")
     col_ownership, col_colors = st.columns(2)
 
@@ -963,7 +1001,7 @@ with tab_stats:
 
     st.divider()
 
-    # 3. PLAYER LEADERBOARD
+    # 4. PLAYER LEADERBOARD
     st.markdown("### 🏆 Player Leaderboard")
     if raw_stats:
         df_players = pd.DataFrame([dict(row) for row in raw_stats])
@@ -988,7 +1026,7 @@ with tab_stats:
 
     st.divider()
 
-    # 4. ALL DECKS PERFORMANCE TABLE
+    # 5. ALL DECKS PERFORMANCE TABLE
     st.markdown("### 🃏 Complete Deck Performance")
     if all_decks:
         df_decks = pd.DataFrame([dict(row) for row in all_decks])
@@ -1017,7 +1055,7 @@ with tab_stats:
 
     st.divider()
 
-    # 5. COLOR IDENTITY WIN RATES
+    # 6. COLOR IDENTITY WIN RATES
     st.markdown("### 🎨 Color Identity Win Rates")
     color_stats = db.get_color_identity_stats()
     if color_stats:
@@ -1082,7 +1120,7 @@ with tab_stats:
 
     st.divider()
 
-    # 6. BRACKET PERFORMANCE & DISTRIBUTION
+    # 7. BRACKET PERFORMANCE & DISTRIBUTION
     st.markdown("### 🎯 Bracket Distribution & Game Velocity")
     if hasattr(db, 'get_bracket_stats'):
         bracket_data = db.get_bracket_stats()
@@ -1130,7 +1168,7 @@ with tab_stats:
         else:
             st.info("No bracket data logged yet.")
 
-    # 7. PLATFORM / MEDIUM DISTRIBUTION
+    # 8. PLATFORM / MEDIUM DISTRIBUTION
     if hasattr(db, 'get_medium_stats'):
         st.divider()
         st.markdown("### 🌐 Game Platform Distribution")

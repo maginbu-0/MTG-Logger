@@ -519,3 +519,60 @@ def update_full_game_match(game_id, total_turns, duration_minutes, win_condition
                     SET deck_id = %s, mulligan_count = %s, is_winner = %s
                     WHERE game_id = %s AND player_id = %s;
                 """, (p['deck_id'], p['mulligan_count'], p['is_winner'], game_id, p['player_id']))
+
+def get_most_common_deck_bracket():
+    """Calculates the most common deck power bracket across registered decks."""
+    query = """
+        SELECT bracket, COUNT(*) as count 
+        FROM decks 
+        WHERE bracket IS NOT NULL 
+        GROUP BY bracket 
+        ORDER BY count DESC, bracket ASC 
+        LIMIT 1;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        row = cur.fetchone()
+        if row:
+            return f"Bracket {row['bracket']} ({row['count']} decks)"
+        return "N/A"
+
+def fetch_last_n_games_detailed(limit=2):
+    """Fetches full match details and seat breakdown for the most recent N games."""
+    query_games = """
+        SELECT game_id, total_turns, duration_minutes, win_condition, COALESCE(notes, '') as notes, bracket, medium
+        FROM games
+        ORDER BY game_id DESC
+        LIMIT %s;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query_games, (limit,))
+        games = cur.fetchall()
+        
+        detailed_games = []
+        for g in games:
+            g_dict = dict(g)
+            g_id = g_dict['game_id']
+            
+            # Fetch participants for this specific game
+            query_participants = """
+                SELECT 
+                    gp.seat_position,
+                    gp.mulligan_count,
+                    gp.is_winner,
+                    p.display_name AS player_name,
+                    d.deck_name,
+                    COALESCE(d.bracket, 3) AS deck_bracket
+                FROM game_participants gp
+                JOIN players p ON gp.player_id = p.player_id
+                JOIN decks d ON gp.deck_id = d.deck_id
+                WHERE gp.game_id = %s
+                ORDER BY gp.seat_position ASC;
+            """
+            cur.execute(query_participants, (g_id,))
+            g_dict['seats'] = cur.fetchall()
+            detailed_games.append(g_dict)
+            
+        return detailed_games
