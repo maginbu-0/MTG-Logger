@@ -468,15 +468,14 @@ def fetch_game_participants(game_id):
 
 def update_full_game_match(game_id, total_turns, duration_minutes, win_condition, notes, bracket, medium, participants):
     """
-    Updates game details and cleanly overwrites game_participants 
-    using the delete-and-reinsert pattern to guarantee no column errors.
+    Updates game metrics and upserts seat records using PostgreSQL ON CONFLICT DO UPDATE.
     """
     params_games = (total_turns, duration_minutes, win_condition, notes, bracket, medium, game_id)
     
     with get_db() as conn:
         cur = conn.cursor()
         
-        # 1. UPDATE GAME METRICS (Try 'games' first, then fallback to 'game_sessions')
+        # 1. Update Game Metrics
         try:
             cur.execute("""
                 UPDATE games 
@@ -499,24 +498,23 @@ def update_full_game_match(game_id, total_turns, duration_minutes, win_condition
                     WHERE id = %s;
                 """, params_games)
 
-        # 2. DELETE OLD PARTICIPANTS FOR THIS GAME
-        try:
-            cur.execute("DELETE FROM game_participants WHERE game_id = %s;", (game_id,))
-        except Exception:
-            conn.rollback()
-            cur.execute("DELETE FROM game_participants WHERE session_id = %s;", (game_id,))
-
-        # 3. RE-INSERT UPDATED PARTICIPANTS
+        # 2. Upsert Participants using ON CONFLICT on (game_id, player_id)
         for p in participants:
             try:
                 cur.execute("""
-                    INSERT INTO game_participants (game_id, player_id, deck_id, mulligan_count, is_winner, seat_number)
-                    VALUES (%s, %s, %s, %s, %s, %s);
-                """, (game_id, p['player_id'], p['deck_id'], p['mulligan_count'], p['is_winner'], p['seat_position']))
+                    INSERT INTO game_participants (game_id, player_id, deck_id, mulligan_count, is_winner)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (game_id, player_id) 
+                    DO UPDATE SET 
+                        deck_id = EXCLUDED.deck_id,
+                        mulligan_count = EXCLUDED.mulligan_count,
+                        is_winner = EXCLUDED.is_winner;
+                """, (game_id, p['player_id'], p['deck_id'], p['mulligan_count'], p['is_winner']))
             except Exception:
                 conn.rollback()
-                # Fallback if seat column is named seat_position
+                # Fallback if constraint key is (game_id, seat_number)
                 cur.execute("""
-                    INSERT INTO game_participants (game_id, player_id, deck_id, mulligan_count, is_winner, seat_position)
-                    VALUES (%s, %s, %s, %s, %s, %s);
-                """, (game_id, p['player_id'], p['deck_id'], p['mulligan_count'], p['is_winner'], p['seat_position']))
+                    UPDATE game_participants 
+                    SET deck_id = %s, mulligan_count = %s, is_winner = %s
+                    WHERE game_id = %s AND player_id = %s;
+                """, (p['deck_id'], p['mulligan_count'], p['is_winner'], game_id, p['player_id']))
