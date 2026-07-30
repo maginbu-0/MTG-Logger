@@ -49,18 +49,18 @@ with st.sidebar:
 role = st.session_state.user_role
 
 if role == "Admin":
-    tab_log, tab_deck, tab_admin, tab_stats = st.tabs([
-        "⚔️ Log Match", "➕ Add Deck", "🛠️ Admin Controls", "📊 Analytics"
+    tab_log, tab_deck, tab_admin_decks, tab_admin_matches, tab_stats = st.tabs([
+        "⚔️ Log Match", "➕ Add Deck", "🛠️ Deck & Player Admin", "✏️ Match Admin", "📊 Analytics"
     ])
 elif role == "Logger":
     tab_log, tab_deck, tab_stats = st.tabs([
         "⚔️ Log Match", "➕ Add Deck", "📊 Analytics"
     ])
-    tab_admin = None
+    tab_admin_decks, tab_admin_matches = None, None
 else:
     st.info("ℹ️ You are in Read-Only mode. Enter a PIN in the sidebar to log games or add decks.")
     tab_stats, = st.tabs(["📊 Analytics"])
-    tab_log, tab_deck, tab_admin = None, None, None
+    tab_log, tab_deck, tab_admin_decks, tab_admin_matches = None, None, None, None
 
 # ------------------------------------------------------------------------------
 # TAB 1: LOG MATCH (ADMIN & LOGGER ONLY)
@@ -363,7 +363,6 @@ if tab_log:
 
                     elif rematch_submit:
                         # REMATCH: Delete ONLY the keys we want to reset (mulligans, winners, win con, notes).
-                        # Deleting keys instead of assigning values avoids StreamlitAPIException!
                         keys_to_reset = [
                             f"input_win_condition_{form_v}",
                             f"input_match_notes_{form_v}"
@@ -446,7 +445,7 @@ if tab_deck:
                                     for comm_name, comm_data in commanders_dict.items():
                                         raw_colors = comm_data.get("card", {}).get("colors", [])
                                         color_str = "".join(raw_colors) if raw_colors else "C"
-                                        comm_id = db.get_or_create_commander(comm_name, color_str)
+                                        comm_id = db.get_or_createcommander(comm_name, color_str)
                                         commander_ids.append(comm_id)
                                     
                                     db.create_deck(owner_id, deck_name, commander_ids, bracket=new_deck_bracket)
@@ -490,19 +489,19 @@ if tab_deck:
                         st.success(f"Deck '{manual_deck_name}' (Bracket {new_deck_bracket}) created with {len(commander_ids)} commander(s)!")
 
 # ------------------------------------------------------------------------------
-# TAB 3: ADMIN CONTROLS (ADMIN ONLY - PIN A)
+# TAB 3: DECK & PLAYER ADMIN (ADMIN ONLY)
 # ------------------------------------------------------------------------------
-if tab_admin:
-    with tab_admin:
-        st.subheader("🛠️ Admin Controls")
+if tab_admin_decks:
+    with tab_admin_decks:
+        st.subheader("🛠️ Player & Deck Management")
         
         if "player_add_success_name" in st.session_state:
             added_name = st.session_state.pop("player_add_success_name")
             st.success(f"🎉 Player **{added_name}** was added successfully!")
             st.toast(f"Added '{added_name}'!", icon="👤")
 
-        # Manage Players
-        with st.expander("👤 Manage Players (Add / Delete)", expanded=False):
+        # 1. MANAGE PLAYERS
+        with st.expander("👤 Manage Players (Add / Delete)", expanded=True):
             col_add, col_del = st.columns(2)
             
             with col_add:
@@ -547,7 +546,83 @@ if tab_admin:
                         else:
                             st.error("Please select a player to remove.")
 
-        # Link Manual Deck to Moxfield
+        # 2. EDIT / DELETE REGISTERED DECKS
+        with st.expander("✏️ Edit & Delete Registered Decks", expanded=True):
+            st.markdown("Select a player to view, modify, or remove their registered decks:")
+            
+            players = db.fetch_players()
+            if players:
+                player_dict = {p['display_name']: p['player_id'] for p in players}
+                selected_edit_owner = st.selectbox(
+                    "Select Deck Owner", 
+                    list(player_dict.keys()), 
+                    index=None, 
+                    key="admin_edit_deck_owner_select"
+                )
+
+                if selected_edit_owner:
+                    owner_id = player_dict[selected_edit_owner]
+                    user_decks = db.fetch_player_decks(owner_id)
+
+                    if user_decks:
+                        deck_options = {d['deck_name']: d for d in user_decks}
+                        selected_deck_name = st.selectbox(
+                            "Select Deck to Modify", 
+                            list(deck_options.keys()), 
+                            index=None, 
+                            key="admin_edit_deck_select"
+                        )
+
+                        if selected_deck_name:
+                            deck_obj = deck_options[selected_deck_name]
+                            selected_deck_id = deck_obj['deck_id']
+                            curr_bracket = int(deck_obj.get('bracket', 3))
+
+                            col_e1, col_e2, col_e3 = st.columns([2, 2, 1])
+                            with col_e1:
+                                new_name = st.text_input("Deck Name", value=selected_deck_name, key=f"input_rename_deck_{selected_deck_id}")
+                            with col_e2:
+                                new_owner_name = st.selectbox(
+                                    "Transfer Ownership To", 
+                                    list(player_dict.keys()), 
+                                    index=list(player_dict.keys()).index(selected_edit_owner),
+                                    key=f"input_reassign_owner_{selected_deck_id}"
+                                )
+                            with col_e3:
+                                edit_deck_bracket = st.selectbox(
+                                    "Power Bracket",
+                                    options=[1, 2, 3, 4, 5],
+                                    index=curr_bracket - 1,
+                                    key=f"input_deck_bracket_{selected_deck_id}"
+                                )
+
+                            col_btn_update, col_btn_del = st.columns(2)
+
+                            with col_btn_update:
+                                if st.button("💾 Save Changes", type="primary", use_container_width=True, key=f"btn_save_deck_{selected_deck_id}"):
+                                    if not new_name.strip():
+                                        st.error("Deck name cannot be empty.")
+                                    else:
+                                        target_owner_id = player_dict[new_owner_name]
+                                        db.update_deck_details(selected_deck_id, new_name.strip(), target_owner_id, bracket=edit_deck_bracket)
+                                        st.toast(f"Updated '{new_name}'!", icon="✅")
+                                        st.success("Deck updated successfully!")
+                                        st.rerun()
+
+                            with col_btn_del:
+                                confirm_deck_del = st.checkbox("Confirm Delete", key=f"chk_del_deck_{selected_deck_id}")
+                                if st.button("🗑️ Delete Deck", type="secondary", use_container_width=True, key=f"btn_del_deck_{selected_deck_id}"):
+                                    if confirm_deck_del:
+                                        db.delete_deck(selected_deck_id)
+                                        st.toast(f"Deleted '{selected_deck_name}'!", icon="🗑️")
+                                        st.success("Deck deleted successfully!")
+                                        st.rerun()
+                                    else:
+                                        st.error("Please check the confirmation box first.")
+                    else:
+                        st.info("This player has no registered decks.")
+
+        # 3. UPGRADE MANUAL DECK TO MOXFIELD
         with st.expander("🔗 Upgrade Manual Deck to Moxfield", expanded=False):
             st.markdown("Select a player and deck to sync or re-import from a Moxfield link:")
             players = db.fetch_players()
@@ -608,7 +683,7 @@ if tab_admin:
                     else:
                         st.info("This player has no registered decks.")
 
-        # View Registered Decks
+        # 4. VIEW REGISTERED DECKS
         with st.expander("🃏 View Registered Players & Decks", expanded=False):
             all_decks = db.fetch_all_decks_with_owners()
             if all_decks:
@@ -626,113 +701,15 @@ if tab_admin:
             else:
                 st.info("No decks registered in the database yet.")
 
-        # Delete Matches
-        with st.expander("🗑️ Match Management (Delete Matches)", expanded=False):
-            st.markdown("Select a game session to delete from database logs:")
-            recent_games = db.fetch_recent_games(limit=20)
-            
-            if recent_games:
-                game_options = {}
-                for g in recent_games:
-                    label = f"Game #{g['game_id']} | Turns: {g['total_turns']} | Win: {g['win_condition']} ({g['participants']})"
-                    game_options[label] = g['game_id']
-                
-                selected_game_label = st.selectbox("Select Match to Delete", list(game_options.keys()), index=None)
-                
-                if selected_game_label:
-                    game_to_delete_id = game_options[selected_game_label]
-                    confirm_delete = st.checkbox(f"I understand this will permanently delete Game #{game_to_delete_id}", key="confirm_game_del")
-                    
-                    if st.button("⚠️ Delete Match Session", type="primary", key="btn_del_game"):
-                        if confirm_delete:
-                            db.delete_game_session(game_to_delete_id)
-                            st.toast(f"Game #{game_to_delete_id} deleted!", icon="🗑️")
-                            st.success(f"Successfully deleted Game #{game_to_delete_id}!")
-                            st.rerun()
-                        else:
-                            st.error("Please check the confirmation box first.")
-            else:
-                st.info("No logged matches found.")
+# ------------------------------------------------------------------------------
+# TAB 4: MATCH ADMIN (ADMIN ONLY)
+# ------------------------------------------------------------------------------
+if tab_admin_matches:
+    with tab_admin_matches:
+        st.subheader("✏️ Match Management & Editing")
 
-        # Expander: Edit / Delete Registered Decks
-        with st.expander("✏️ Edit & Delete Registered Decks", expanded=False):
-            st.markdown("Select a player to view, modify, or remove their registered decks:")
-            
-            players = db.fetch_players()
-            if players:
-                player_dict = {p['display_name']: p['player_id'] for p in players}
-                selected_edit_owner = st.selectbox(
-                    "Select Deck Owner", 
-                    list(player_dict.keys()), 
-                    index=None, 
-                    key="admin_edit_deck_owner_select"
-                )
-
-                if selected_edit_owner:
-                    owner_id = player_dict[selected_edit_owner]
-                    user_decks = db.fetch_player_decks(owner_id)
-
-                    if user_decks:
-                        deck_options = {d['deck_name']: d for d in user_decks}
-                        selected_deck_name = st.selectbox(
-                            "Select Deck to Modify", 
-                            list(deck_options.keys()), 
-                            index=None, 
-                            key="admin_edit_deck_select"
-                        )
-
-                        if selected_deck_name:
-                            deck_obj = deck_options[selected_deck_name]
-                            selected_deck_id = deck_obj['deck_id']
-                            curr_bracket = int(deck_obj.get('bracket', 3))
-
-                            col_e1, col_e2, col_e3 = st.columns([2, 2, 1])
-                            with col_e1:
-                                new_name = st.text_input("Deck Name", value=selected_deck_name, key=f"input_rename_deck_{selected_deck_id}")
-                            with col_e2:
-                                # Allow reassigning ownership to another player
-                                new_owner_name = st.selectbox(
-                                    "Transfer Ownership To", 
-                                    list(player_dict.keys()), 
-                                    index=list(player_dict.keys()).index(selected_edit_owner),
-                                    key=f"input_reassign_owner_{selected_deck_id}"
-                                )
-                            with col_e3:
-                                edit_deck_bracket = st.selectbox(
-                                    "Power Bracket",
-                                    options=[1, 2, 3, 4, 5],
-                                    index=curr_bracket - 1,
-                                    key=f"input_deck_bracket_{selected_deck_id}"
-                                )
-
-                            col_btn_update, col_btn_del = st.columns(2)
-
-                            with col_btn_update:
-                                if st.button("💾 Save Changes", type="primary", use_container_width=True, key=f"btn_save_deck_{selected_deck_id}"):
-                                    if not new_name.strip():
-                                        st.error("Deck name cannot be empty.")
-                                    else:
-                                        target_owner_id = player_dict[new_owner_name]
-                                        db.update_deck_details(selected_deck_id, new_name.strip(), target_owner_id, bracket=edit_deck_bracket)
-                                        st.toast(f"Updated '{new_name}'!", icon="✅")
-                                        st.success("Deck updated successfully!")
-                                        st.rerun()
-
-                            with col_btn_del:
-                                confirm_deck_del = st.checkbox("Confirm Delete", key=f"chk_del_deck_{selected_deck_id}")
-                                if st.button("🗑️ Delete Deck", type="secondary", use_container_width=True, key=f"btn_del_deck_{selected_deck_id}"):
-                                    if confirm_deck_del:
-                                        db.delete_deck(selected_deck_id)
-                                        st.toast(f"Deleted '{selected_deck_name}'!", icon="🗑️")
-                                        st.success("Deck deleted successfully!")
-                                        st.rerun()
-                                    else:
-                                        st.error("Please check the confirmation box first.")
-                    else:
-                        st.info("This player has no registered decks.")
-
-        # Expander: Edit Logged Matches
-        with st.expander("✏️ Edit Logged Matches & Participants", expanded=False):
+        # 1. EDIT LOGGED MATCHES & PARTICIPANTS
+        with st.expander("✏️ Edit Logged Matches & Participants", expanded=True):
             st.markdown("Select a game session to modify its details, seats, assigned decks, or borrowed status:")
             
             recent_games = db.fetch_recent_games(limit=25)
@@ -877,8 +854,36 @@ if tab_admin:
             else:
                 st.info("No logged matches found.")
 
+        # 2. DELETE MATCHES
+        with st.expander("🗑️ Delete Matches", expanded=False):
+            st.markdown("Select a game session to permanently delete from database logs:")
+            recent_games = db.fetch_recent_games(limit=20)
+            
+            if recent_games:
+                game_options = {}
+                for g in recent_games:
+                    label = f"Game #{g['game_id']} | Turns: {g['total_turns']} | Win: {g['win_condition']} ({g['participants']})"
+                    game_options[label] = g['game_id']
+                
+                selected_game_label = st.selectbox("Select Match to Delete", list(game_options.keys()), index=None, key="admin_select_match_delete")
+                
+                if selected_game_label:
+                    game_to_delete_id = game_options[selected_game_label]
+                    confirm_delete = st.checkbox(f"I understand this will permanently delete Game #{game_to_delete_id}", key="confirm_game_del")
+                    
+                    if st.button("⚠️ Delete Match Session", type="primary", key="btn_del_game"):
+                        if confirm_delete:
+                            db.delete_game_session(game_to_delete_id)
+                            st.toast(f"Game #{game_to_delete_id} deleted!", icon="🗑️")
+                            st.success(f"Successfully deleted Game #{game_to_delete_id}!")
+                            st.rerun()
+                        else:
+                            st.error("Please check the confirmation box first.")
+            else:
+                st.info("No logged matches found.")
+
 # ------------------------------------------------------------------------------
-# TAB 4: ANALYTICS (PUBLIC / ALL ROLES)
+# TAB 5: ANALYTICS (PUBLIC / ALL ROLES)
 # ------------------------------------------------------------------------------
 with tab_stats:
     st.subheader("📊 Playgroup Operations & Metrics")
