@@ -445,7 +445,7 @@ if tab_deck:
                                     for comm_name, comm_data in commanders_dict.items():
                                         raw_colors = comm_data.get("card", {}).get("colors", [])
                                         color_str = "".join(raw_colors) if raw_colors else "C"
-                                        comm_id = db.get_or_createcommander(comm_name, color_str)
+                                        comm_id = db.get_or_create_commander(comm_name, color_str)
                                         commander_ids.append(comm_id)
                                     
                                     db.create_deck(owner_id, deck_name, commander_ids, bracket=new_deck_bracket)
@@ -501,7 +501,7 @@ if tab_admin_decks:
             st.toast(f"Added '{added_name}'!", icon="👤")
 
         # 1. MANAGE PLAYERS
-        with st.expander("👤 Manage Players (Add / Delete)", expanded=True):
+        with st.expander("👤 Manage Players (Add / Delete)", expanded=False):
             col_add, col_del = st.columns(2)
             
             with col_add:
@@ -547,7 +547,7 @@ if tab_admin_decks:
                             st.error("Please select a player to remove.")
 
         # 2. EDIT / DELETE REGISTERED DECKS
-        with st.expander("✏️ Edit & Delete Registered Decks", expanded=True):
+        with st.expander("✏️ Edit & Delete Registered Decks", expanded=False):
             st.markdown("Select a player to view, modify, or remove their registered decks:")
             
             players = db.fetch_players()
@@ -709,7 +709,7 @@ if tab_admin_matches:
         st.subheader("✏️ Match Management & Editing")
 
         # 1. EDIT LOGGED MATCHES & PARTICIPANTS
-        with st.expander("✏️ Edit Logged Matches & Participants", expanded=True):
+        with st.expander("✏️ Edit Logged Matches & Participants", expanded=False):
             st.markdown("Select a game session to modify its details, seats, assigned decks, or borrowed status:")
             
             recent_games = db.fetch_recent_games(limit=25)
