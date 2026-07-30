@@ -62,8 +62,6 @@ else:
     tab_stats, = st.tabs(["📊 Analytics"])
     tab_log, tab_deck, tab_admin = None, None, None
 
-
-
 # ------------------------------------------------------------------------------
 # TAB 1: LOG MATCH (ADMIN & LOGGER ONLY)
 # ------------------------------------------------------------------------------
@@ -177,6 +175,12 @@ if tab_log:
         if "input_duration" not in st.session_state:
             st.session_state["input_duration"] = 45
 
+        # --- FORM CLEARING VERSION TRACKER ---
+        if "form_version" not in st.session_state:
+            st.session_state.form_version = 0
+
+        form_v = st.session_state.form_version
+
         players = db.fetch_players()
         
         if not players:
@@ -221,7 +225,7 @@ if tab_log:
                 ["Combat Damage", "Infinite Combo", "Alternate Win-Con", "Commander Damage", "Scoop / Surrender"],
                 index=None,
                 placeholder="How did it end?",
-                key="input_win_condition"
+                key=f"input_win_condition_{form_v}"
             )
 
             st.divider()
@@ -233,7 +237,8 @@ if tab_log:
                     "Number of Players",
                     options=[3, 4],
                     index=1,
-                    help="Default is 4 players, but you can switch to 3 for a 3-player pod."
+                    help="Default is 4 players, but you can switch to 3 for a 3-player pod.",
+                    key=f"input_num_players_{form_v}"
                 )
 
             st.subheader("Participants")
@@ -246,7 +251,7 @@ if tab_log:
                         player_names,
                         index=None,
                         placeholder="Select player...",
-                        key=f"seat_player_{seat}"
+                        key=f"seat_player_{seat}_{form_v}"
                     )
                     
                     selected_player_id = None
@@ -263,20 +268,20 @@ if tab_log:
                                 list(deck_dict.keys()),
                                 index=None,
                                 placeholder="Select deck...",
-                                key=f"seat_deck_{seat}"
+                                key=f"seat_deck_{seat}_{form_v}"
                             )
                             if selected_deck_name:
                                 selected_deck_id = deck_dict[selected_deck_name]
                         else:
                             st.caption("⚠️ No active decks found for this player.")
                     else:
-                        st.selectbox("Deck", [], disabled=True, index=None, placeholder="Waiting for player...", key=f"seat_deck_disabled_{seat}")
+                        st.selectbox("Deck", [], disabled=True, index=None, placeholder="Waiting for player...", key=f"seat_deck_disabled_{seat}_{form_v}")
 
                     col_mull, col_win = st.columns(2)
                     with col_mull:
-                        mulligans = st.number_input("Mulligans", 0, 7, 0, key=f"seat_mull_{seat}")
+                        mulligans = st.number_input("Mulligans", 0, 7, 0, key=f"seat_mull_{seat}_{form_v}")
                     with col_win:
-                        is_winner = st.checkbox("Winner 🏆", key=f"seat_win_{seat}")
+                        is_winner = st.checkbox("Winner 🏆", key=f"seat_win_{seat}_{form_v}")
 
                     participants_input.append({
                         "seat_position": seat,
@@ -286,14 +291,14 @@ if tab_log:
                         "is_winner": is_winner
                     })
 
-            notes = st.text_input("Match Notes (Optional)", placeholder="e.g. Turn 6 Rhystic Study went unanswered", key="input_match_notes")
+            notes = st.text_input("Match Notes (Optional)", placeholder="e.g. Turn 6 Rhystic Study went unanswered", key=f"input_match_notes_{form_v}")
             
             # --- ACTION BUTTONS ---
             col_save1, col_save2 = st.columns(2)
             with col_save1:
-                submit_match = st.button("💾 Save Game Log (Clear Form)", use_container_width=True, type="primary")
+                submit_match = st.button("💾 Save Game Log (Clear Form)", use_container_width=True, type="primary", key=f"btn_save_clear_{form_v}")
             with col_save2:
-                rematch_submit = st.button("🔁 Save & Rematch (Keep Pod/Decks)", use_container_width=True, type="secondary")
+                rematch_submit = st.button("🔁 Save & Rematch (Keep Pod/Decks)", use_container_width=True, type="secondary", key=f"btn_save_rematch_{form_v}")
 
             if submit_match or rematch_submit:
                 missing_players = any(p['player_id'] is None for p in participants_input)
@@ -326,33 +331,24 @@ if tab_log:
                     st.session_state.live_turn_count = 1
                     db.update_live_session(active_session_key, False, None, 0, 1)
 
-                    # Form input keys to reset
-                    keys_to_delete = ["input_total_turns", "input_duration", "input_win_condition", "input_match_notes"]
-
                     if submit_match:
-                        # FULL CLEAR: Delete players, decks, mulligans, and winner check
-                        for seat in range(1, 5):
-                            keys_to_delete.extend([
-                                f"seat_player_{seat}",
-                                f"seat_deck_{seat}",
-                                f"seat_mull_{seat}",
-                                f"seat_win_{seat}"
-                            ])
+                        # FULL CLEAR: Increment form version so Streamlit generates completely new, blank widgets
+                        st.session_state.form_version += 1
                         st.toast("Game logged & form cleared!", icon="🧹")
 
                     elif rematch_submit:
-                        # REMATCH: Keep players AND decks! Only reset mulligans and winner check
-                        for seat in range(1, 5):
-                            keys_to_delete.extend([
-                                f"seat_mull_{seat}",
-                                f"seat_win_{seat}"
-                            ])
+                        # REMATCH: Keep players AND decks! Reset mulligans, winner checkboxes, win con & notes
+                        for seat in range(1, num_players + 1):
+                            if f"seat_mull_{seat}_{form_v}" in st.session_state:
+                                st.session_state[f"seat_mull_{seat}_{form_v}"] = 0
+                            if f"seat_win_{seat}_{form_v}" in st.session_state:
+                                st.session_state[f"seat_win_{seat}_{form_v}"] = False
+                        
+                        if f"input_win_condition_{form_v}" in st.session_state:
+                            st.session_state[f"input_win_condition_{form_v}"] = None
+                        if f"input_match_notes_{form_v}" in st.session_state:
+                            st.session_state[f"input_match_notes_{form_v}"] = ""
                         st.toast("Game logged! Ready for Rematch with same pod & decks!", icon="🔁")
-
-                    # Delete only specified keys from session state
-                    for k in keys_to_delete:
-                        if k in st.session_state:
-                            del st.session_state[k]
 
                     st.rerun()
 
