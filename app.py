@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import pandas as pd
 import db
+from streamlit_local_storage import LocalStorage
 
 # Page setup
 st.set_page_config(
@@ -62,6 +63,11 @@ else:
     tab_stats, = st.tabs(["📊 Analytics"])
     tab_log, tab_deck, tab_admin = None, None, None
 
+
+
+# Initialize local storage interface
+local_storage = LocalStorage()
+
 # ------------------------------------------------------------------------------
 # TAB 1: LOG MATCH (ADMIN & LOGGER ONLY)
 # ------------------------------------------------------------------------------
@@ -69,17 +75,31 @@ if tab_log:
     with tab_log:
         st.subheader("⚔️ Live Match Companion & Logger")
 
-        # Initialize Live Match Session State Variables
+        # 1. READ SAVED STATE FROM BROWSER LOCAL STORAGE (RESTORE ON MOBILE REFRESH)
+        saved_timer_data = local_storage.getItem("mtg_tracker_live_companion")
+
         if "timer_running" not in st.session_state:
-            st.session_state.timer_running = False
-        if "timer_start_time" not in st.session_state:
-            st.session_state.timer_start_time = None
-        if "timer_elapsed_seconds" not in st.session_state:
-            st.session_state.timer_elapsed_seconds = 0
-        if "live_turn_count" not in st.session_state:
-            st.session_state.live_turn_count = 1
-            
-        # Live Time Calculation
+            if saved_timer_data and isinstance(saved_timer_data, dict):
+                st.session_state.timer_running = saved_timer_data.get("timer_running", False)
+                st.session_state.timer_start_time = saved_timer_data.get("timer_start_time", None)
+                st.session_state.timer_elapsed_seconds = saved_timer_data.get("timer_elapsed_seconds", 0)
+                st.session_state.live_turn_count = saved_timer_data.get("live_turn_count", 1)
+            else:
+                st.session_state.timer_running = False
+                st.session_state.timer_start_time = None
+                st.session_state.timer_elapsed_seconds = 0
+                st.session_state.live_turn_count = 1
+
+        # Helper function to cache current live state to phone browser storage
+        def sync_companion_to_storage():
+            local_storage.setItem("mtg_tracker_live_companion", {
+                "timer_running": st.session_state.timer_running,
+                "timer_start_time": st.session_state.timer_start_time,
+                "timer_elapsed_seconds": st.session_state.timer_elapsed_seconds,
+                "live_turn_count": st.session_state.live_turn_count
+            })
+
+        # 2. Live Time Calculation
         import time
         current_elapsed = st.session_state.timer_elapsed_seconds
         if st.session_state.timer_running and st.session_state.timer_start_time is not None:
@@ -103,12 +123,14 @@ if tab_log:
                         if st.button("▶️ Start / Resume", use_container_width=True, key="btn_timer_start"):
                             st.session_state.timer_running = True
                             st.session_state.timer_start_time = time.time()
+                            sync_companion_to_storage()
                             st.rerun()
                     else:
                         if st.button("⏸️ Pause", use_container_width=True, key="btn_timer_pause"):
                             st.session_state.timer_running = False
                             st.session_state.timer_elapsed_seconds = current_elapsed
                             st.session_state.timer_start_time = None
+                            sync_companion_to_storage()
                             st.rerun()
                 
                 with t_col2:
@@ -116,6 +138,7 @@ if tab_log:
                         st.session_state.timer_running = False
                         st.session_state.timer_start_time = None
                         st.session_state.timer_elapsed_seconds = 0
+                        local_storage.deleteItem("mtg_tracker_live_companion")
                         st.rerun()
 
             with col_turns:
@@ -127,10 +150,12 @@ if tab_log:
                     if st.button("➖ Turn", use_container_width=True, key="btn_sub_turn"):
                         if st.session_state.live_turn_count > 1:
                             st.session_state.live_turn_count -= 1
+                            sync_companion_to_storage()
                             st.rerun()
                 with turn_col2:
                     if st.button("➕ Next Turn", type="primary", use_container_width=True, key="btn_add_turn"):
                         st.session_state.live_turn_count += 1
+                        sync_companion_to_storage()
                         st.rerun()
 
             st.divider()
@@ -146,6 +171,7 @@ if tab_log:
                 st.session_state["input_total_turns"] = int(st.session_state.live_turn_count)
                 st.session_state["input_duration"] = int(final_minutes)
                 
+                sync_companion_to_storage()
                 st.toast(f"Pushed {final_minutes} mins and Turn {st.session_state.live_turn_count} to form!", icon="⏱️")
                 st.rerun()
 
@@ -298,11 +324,12 @@ if tab_log:
                     }
                     db.log_game_session(game_data, participants_input)
                     
-                    # Reset Live Companion Timer & Turns
+                    # Clear live companion state on successful save
                     st.session_state.timer_running = False
                     st.session_state.timer_start_time = None
                     st.session_state.timer_elapsed_seconds = 0
                     st.session_state.live_turn_count = 1
+                    local_storage.deleteItem("mtg_tracker_live_companion")
 
                     # Clean active keys so Streamlit recreates widgets safely on rerun
                     keys_to_delete = ["input_total_turns", "input_duration", "input_bracket", "input_medium", "input_win_condition", "input_match_notes"]
