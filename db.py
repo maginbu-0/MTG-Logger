@@ -94,8 +94,14 @@ def create_deck(player_id, deck_name, commander_ids, bracket=3):
 
 
 def log_game_session(game_data, participants):
-    """Logs a game session including turn count, duration, win con, notes, bracket, and medium."""
+    """Logs a game session with explicit AST timestamp tracking."""
     query_game = """
+        INSERT INTO games (total_turns, duration_minutes, win_condition, notes, bracket, medium, played_at) 
+        VALUES (%s, %s, %s, %s, %s, %s, NOW() - INTERVAL '4 hours') 
+        RETURNING game_id;
+    """
+    # If played_at isn't present in your games schema, fallback automatically
+    query_game_fallback = """
         INSERT INTO games (total_turns, duration_minutes, win_condition, notes, bracket, medium) 
         VALUES (%s, %s, %s, %s, %s, %s) 
         RETURNING game_id;
@@ -106,14 +112,26 @@ def log_game_session(game_data, participants):
     """
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute(query_game, (
-            game_data['total_turns'],
-            game_data['duration_minutes'],
-            game_data['win_condition'],
-            game_data['notes'],
-            game_data['bracket'],
-            game_data['medium']
-        ))
+        try:
+            cur.execute(query_game, (
+                game_data['total_turns'],
+                game_data['duration_minutes'],
+                game_data['win_condition'],
+                game_data['notes'],
+                game_data['bracket'],
+                game_data['medium']
+            ))
+        except Exception:
+            conn.rollback()
+            cur.execute(query_game_fallback, (
+                game_data['total_turns'],
+                game_data['duration_minutes'],
+                game_data['win_condition'],
+                game_data['notes'],
+                game_data['bracket'],
+                game_data['medium']
+            ))
+            
         game_id = cur.fetchone()['game_id']
         
         for p in participants:
@@ -578,7 +596,7 @@ def fetch_last_n_games_detailed(limit=2):
         return detailed_games
 
 def fetch_games_by_date(selected_date):
-    """Fetches games logged on a specific date converted to AST timezone."""
+    """Fetches games logged on a specific date, converted cleanly to AST local date."""
     query = """
         SELECT 
             g.game_id,
@@ -589,7 +607,10 @@ def fetch_games_by_date(selected_date):
         FROM games g
         JOIN game_participants gp ON g.game_id = gp.game_id
         JOIN players p ON gp.player_id = p.player_id
-        WHERE DATE(g.played_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Santo_Domingo') = %s
+        WHERE (
+            -- Subtract 4 hours (AST offset) directly from UTC timestamp to get true local calendar date
+            (COALESCE(g.played_at, g.created_at) - INTERVAL '4 hours')::date = %s
+        )
         GROUP BY g.game_id, g.total_turns, g.win_condition, g.notes
         ORDER BY g.game_id DESC;
     """
@@ -598,22 +619,7 @@ def fetch_games_by_date(selected_date):
         try:
             cur.execute(query, (selected_date,))
             return cur.fetchall()
-        except Exception:
+        except Exception as e:
             conn.rollback()
-            # Fallback if played_at column name differs
-            query_alt = """
-                SELECT 
-                    g.game_id,
-                    g.total_turns,
-                    g.win_condition,
-                    COALESCE(g.notes, '') AS notes,
-                    STRING_AGG(p.display_name, ', ' ORDER BY gp.seat_position) AS participants
-                FROM games g
-                JOIN game_participants gp ON g.game_id = gp.game_id
-                JOIN players p ON gp.player_id = p.player_id
-                WHERE DATE(g.created_at AT TIME ZONE 'UTC' AT TIME ZONE 'America/Santo_Domingo') = %s
-                GROUP BY g.game_id, g.total_turns, g.win_condition, g.notes
-                ORDER BY g.game_id DESC;
-            """
-            cur.execute(query_alt, (selected_date,))
-            return cur.fetchall()
+            print(f"Error fetching games by date: {e}")
+            return []
