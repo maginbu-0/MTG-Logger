@@ -535,8 +535,8 @@ def get_most_common_deck_bracket():
         cur.execute(query)
         row = cur.fetchone()
         if row:
-            return f"Bracket {row['bracket']} ({row['count']} decks)"
-        return "N/A"
+            return f"Bracket {row['bracket']}", f"{row['count']} decks"
+        return "N/A", ""
 
 def fetch_last_n_games_detailed(limit=2):
     """Fetches full match details and seat breakdown for the most recent N games."""

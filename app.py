@@ -895,6 +895,7 @@ with tab_stats:
     
     total_games_played = db.get_total_games_count() if hasattr(db, 'get_total_games_count') else (sum([dict(r)['wins'] for r in raw_stats]) if raw_stats else 0)
     total_registered_decks = len(all_decks) if all_decks else 0
+    bracket_val, bracket_sub = db.get_most_common_deck_bracket() if hasattr(db, 'get_most_common_deck_bracket') else ("N/A", "")
     
     overview_data = db.get_game_overview_stats()
     avg_turns = 0
@@ -913,7 +914,7 @@ with tab_stats:
         st.metric("Total Decks Registered", total_registered_decks)
         st.metric("Avg Game Length", f"{int(avg_duration)} mins" if avg_duration else "N/A")
     with col_m3:
-        st.metric("Most Played Fleet Bracket", most_common_bracket)
+        st.metric("Most Played Fleet Bracket", bracket_val, delta=bracket_sub, delta_color="off")
     
     st.divider()
 
