@@ -827,7 +827,7 @@ if tab_admin:
                                     edit_win = st.checkbox("Winner 🏆", value=bool(seat_dict.get('is_winner', False)), key=f"edit_win_{part_id}_{idx}")
 
                                 updated_seats.append({
-                                    "participant_id": part_id,
+                                    "seat_position": s_pos,
                                     "player_id": new_seat_player_id,
                                     "deck_id": new_seat_deck_id,
                                     "mulligan_count": edit_mull,
@@ -836,18 +836,24 @@ if tab_admin:
 
                         if st.button("💾 Save Match Edits", type="primary", use_container_width=True, key=f"btn_save_match_edit_{game_to_edit_id}"):
                             winners_count = sum(1 for s in updated_seats if s['is_winner'])
+                            missing_decks = any(s['deck_id'] is None for s in updated_seats)
+                            
                             if winners_count != 1:
                                 st.warning("Please mark exactly ONE player as the winner.")
+                            elif missing_decks:
+                                st.error("Please ensure a valid deck is assigned to all seats.")
                             else:
-                                # Save game session details
-                                db.update_game_session_details(
-                                    game_to_edit_id, edit_turns, edit_duration, edit_win_con, edit_notes, edit_bracket, edit_medium
+                                # Cleanly update game and re-insert participants in one atomic transaction
+                                db.update_full_game_match(
+                                    game_id=game_to_edit_id,
+                                    total_turns=edit_turns,
+                                    duration_minutes=edit_duration,
+                                    win_condition=edit_win_con,
+                                    notes=edit_notes,
+                                    bracket=edit_bracket,
+                                    medium=edit_medium,
+                                    participants=updated_seats
                                 )
-                                # Save participant seat details
-                                for s in updated_seats:
-                                    db.update_game_participant(
-                                        s['participant_id'], s['player_id'], s['deck_id'], s['mulligan_count'], s['is_winner']
-                                    )
                                 st.toast(f"Game #{game_to_edit_id} updated successfully!", icon="✅")
                                 st.success("Match record updated!")
                                 st.rerun()

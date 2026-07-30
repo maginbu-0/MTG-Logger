@@ -466,58 +466,57 @@ def fetch_game_participants(game_id):
         
         return participants
 
-def update_game_session_details(game_id, total_turns, duration_minutes, win_condition, notes, bracket, medium):
-    """Updates high-level game session details with fallback for table names."""
-    # Attempt 1: 'games' table (most likely matching log_game_session)
-    query_games = """
-        UPDATE games
-        SET total_turns = %s, duration_minutes = %s, win_condition = %s, notes = %s, bracket = %s, medium = %s
-        WHERE game_id = %s;
+def update_full_game_match(game_id, total_turns, duration_minutes, win_condition, notes, bracket, medium, participants):
     """
-    # Attempt 2: 'game_sessions' table
-    query_sessions = """
-        UPDATE game_sessions
-        SET total_turns = %s, duration_minutes = %s, win_condition = %s, notes = %s, bracket = %s, medium = %s
-        WHERE game_id = %s;
+    Updates game details and cleanly overwrites game_participants 
+    using the delete-and-reinsert pattern to guarantee no column errors.
     """
-    params = (total_turns, duration_minutes, win_condition, notes, bracket, medium, game_id)
+    params_games = (total_turns, duration_minutes, win_condition, notes, bracket, medium, game_id)
     
     with get_db() as conn:
         cur = conn.cursor()
+        
+        # 1. UPDATE GAME METRICS (Try 'games' first, then fallback to 'game_sessions')
         try:
-            cur.execute(query_games, params)
+            cur.execute("""
+                UPDATE games 
+                SET total_turns = %s, duration_minutes = %s, win_condition = %s, notes = %s, bracket = %s, medium = %s
+                WHERE game_id = %s;
+            """, params_games)
         except Exception:
             conn.rollback()
             try:
-                cur.execute(query_sessions, params)
+                cur.execute("""
+                    UPDATE game_sessions 
+                    SET total_turns = %s, duration_minutes = %s, win_condition = %s, notes = %s, bracket = %s, medium = %s
+                    WHERE game_id = %s;
+                """, params_games)
             except Exception:
                 conn.rollback()
-                # Attempt 3: If primary key column is 'id' instead of 'game_id'
-                query_alt = """
-                    UPDATE games
+                cur.execute("""
+                    UPDATE games 
                     SET total_turns = %s, duration_minutes = %s, win_condition = %s, notes = %s, bracket = %s, medium = %s
                     WHERE id = %s;
-                """
-                cur.execute(query_alt, params)
+                """, params_games)
 
-def update_game_participant(participant_id, player_id, deck_id, mulligan_count, is_winner):
-    """Updates an individual participant seat record safely."""
-    query = """
-        UPDATE game_participants
-        SET player_id = %s, deck_id = %s, mulligan_count = %s, is_winner = %s
-        WHERE participant_id = %s;
-    """
-    params = (player_id, deck_id, mulligan_count, is_winner, participant_id)
-    
-    with get_db() as conn:
-        cur = conn.cursor()
+        # 2. DELETE OLD PARTICIPANTS FOR THIS GAME
         try:
-            cur.execute(query, params)
+            cur.execute("DELETE FROM game_participants WHERE game_id = %s;", (game_id,))
         except Exception:
             conn.rollback()
-            query_alt = """
-                UPDATE game_participants
-                SET player_id = %s, deck_id = %s, mulligan_count = %s, is_winner = %s
-                WHERE id = %s;
-            """
-            cur.execute(query_alt, params)
+            cur.execute("DELETE FROM game_participants WHERE session_id = %s;", (game_id,))
+
+        # 3. RE-INSERT UPDATED PARTICIPANTS
+        for p in participants:
+            try:
+                cur.execute("""
+                    INSERT INTO game_participants (game_id, player_id, deck_id, mulligan_count, is_winner, seat_number)
+                    VALUES (%s, %s, %s, %s, %s, %s);
+                """, (game_id, p['player_id'], p['deck_id'], p['mulligan_count'], p['is_winner'], p['seat_position']))
+            except Exception:
+                conn.rollback()
+                # Fallback if seat column is named seat_position
+                cur.execute("""
+                    INSERT INTO game_participants (game_id, player_id, deck_id, mulligan_count, is_winner, seat_position)
+                    VALUES (%s, %s, %s, %s, %s, %s);
+                """, (game_id, p['player_id'], p['deck_id'], p['mulligan_count'], p['is_winner'], p['seat_position']))
