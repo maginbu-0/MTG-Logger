@@ -766,26 +766,38 @@ if tab_admin:
                         st.markdown("#### 2. Seats & Decks (Retroactive Fixes)")
                         updated_seats = []
 
-                        for seat in seat_participants:
+                        # Map deck IDs to deck details for easy lookup
+                        global_deck_map = {d['deck_id']: d for d in all_global_decks} if all_global_decks else {}
+
+                        for idx, seat in enumerate(seat_participants, start=1):
                             seat_dict = dict(seat)
-                            s_pos = seat_dict.get('seat_position', 1)
+                            
+                            # Handle dynamic ID field names
+                            part_id = seat_dict.get('participant_id', seat_dict.get('id', idx))
+                            s_pos = seat_dict.get('seat_number', seat_dict.get('seat_position', seat_dict.get('seat', idx)))
                             p_id = seat_dict.get('player_id')
                             d_id = seat_dict.get('deck_id')
-                            part_id = seat_dict.get('participant_id')
                             
-                            is_currently_borrowed = (p_id != seat_dict.get('deck_owner_id'))
+                            # Get current deck info to determine original ownership
+                            curr_deck_info = global_deck_map.get(d_id, {})
+                            deck_owner_id = curr_deck_info.get('owner_id')
+                            curr_deck_name = curr_deck_info.get('deck_name', 'Unknown Deck')
+                            
+                            # Get current player display name
+                            curr_p_name = next((name for name, pid in player_dict.items() if pid == p_id), "Select Player")
 
-                            with st.expander(f"👤 Seat {s_pos}: {seat_dict.get('player_name', 'Player')} ({'🎁 Borrowed Deck' if is_currently_borrowed else 'Owned Deck'})", expanded=True):
+                            is_currently_borrowed = (p_id != deck_owner_id) if deck_owner_id else False
+
+                            with st.expander(f"👤 Seat {s_pos}: {curr_p_name} ({'🎁 Borrowed Deck' if is_currently_borrowed else 'Owned Deck'})", expanded=True):
                                 # Player Selection
                                 player_names = list(player_dict.keys())
-                                curr_p_name = seat_dict.get('player_name')
                                 p_idx = player_names.index(curr_p_name) if curr_p_name in player_names else 0
                                 
-                                new_seat_player = st.selectbox("Player", player_names, index=p_idx, key=f"edit_p_seat_{part_id}")
+                                new_seat_player = st.selectbox("Player", player_names, index=p_idx, key=f"edit_p_seat_{part_id}_{idx}")
                                 new_seat_player_id = player_dict[new_seat_player]
 
                                 # Borrowed deck toggle override
-                                edit_borrowing = st.checkbox("🎁 Was this a borrowed deck?", value=is_currently_borrowed, key=f"edit_borrow_chk_{part_id}")
+                                edit_borrowing = st.checkbox("🎁 Was this a borrowed deck?", value=is_currently_borrowed, key=f"edit_borrow_chk_{part_id}_{idx}")
 
                                 if edit_borrowing:
                                     global_deck_dict = {f"{d['deck_name']} (Owner: {d['owner_name']})": d['deck_id'] for d in all_global_decks}
@@ -793,17 +805,16 @@ if tab_admin:
                                     g_keys = list(global_deck_dict.keys())
                                     g_idx = g_keys.index(curr_deck_label) if curr_deck_label in g_keys else 0
 
-                                    selected_deck_label = st.selectbox("Borrowed Deck", g_keys, index=g_idx, key=f"edit_d_global_{part_id}")
+                                    selected_deck_label = st.selectbox("Borrowed Deck", g_keys, index=g_idx, key=f"edit_d_global_{part_id}_{idx}")
                                     new_seat_deck_id = global_deck_dict[selected_deck_label]
                                 else:
                                     player_decks = db.fetch_player_decks(new_seat_player_id)
                                     if player_decks:
                                         p_deck_dict = {d['deck_name']: d['deck_id'] for d in player_decks}
                                         p_deck_names = list(p_deck_dict.keys())
-                                        curr_d_name = seat_dict.get('deck_name')
-                                        d_idx = p_deck_names.index(curr_d_name) if curr_d_name in p_deck_names else 0
+                                        d_idx = p_deck_names.index(curr_deck_name) if curr_deck_name in p_deck_names else 0
 
-                                        selected_deck_name = st.selectbox("Owned Deck", p_deck_names, index=d_idx, key=f"edit_d_owned_{part_id}")
+                                        selected_deck_name = st.selectbox("Owned Deck", p_deck_names, index=d_idx, key=f"edit_d_owned_{part_id}_{idx}")
                                         new_seat_deck_id = p_deck_dict[selected_deck_name]
                                     else:
                                         st.caption("⚠️ Selected player has no registered decks. Toggle 'Borrowed deck' above to pick from global list.")
@@ -811,9 +822,9 @@ if tab_admin:
 
                                 scol1, scol2 = st.columns(2)
                                 with scol1:
-                                    edit_mull = st.number_input("Mulligans", 0, 7, value=int(seat_dict.get('mulligan_count', 0)), key=f"edit_mull_{part_id}")
+                                    edit_mull = st.number_input("Mulligans", 0, 7, value=int(seat_dict.get('mulligan_count', 0)), key=f"edit_mull_{part_id}_{idx}")
                                 with scol2:
-                                    edit_win = st.checkbox("Winner 🏆", value=bool(seat_dict.get('is_winner', False)), key=f"edit_win_{part_id}")
+                                    edit_win = st.checkbox("Winner 🏆", value=bool(seat_dict.get('is_winner', False)), key=f"edit_win_{part_id}_{idx}")
 
                                 updated_seats.append({
                                     "participant_id": part_id,

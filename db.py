@@ -441,56 +441,30 @@ def delete_deck(deck_id):
         cur.execute("DELETE FROM decks WHERE deck_id = %s;", (deck_id,))
 
 def fetch_game_participants(game_id):
-    """Fetches seat participants for a specific game session cleanly."""
-    query = """
-        SELECT 
-            gp.participant_id,
-            gp.seat_number AS seat_position,
-            gp.player_id,
-            gp.deck_id,
-            gp.mulligan_count,
-            gp.is_winner,
-            p.display_name AS player_name,
-            d.deck_name,
-            d.owner_id AS deck_owner_id
-        FROM game_participants gp
-        JOIN players p ON gp.player_id = p.player_id
-        JOIN decks d ON gp.deck_id = d.deck_id
-        WHERE gp.game_id = %s
-        ORDER BY gp.participant_id ASC;
-    """
+    """Fetches seat participants for a game session without fragile SQL JOIN column assumptions."""
+    query = "SELECT * FROM game_participants WHERE game_id = %s;"
+    
     with get_db() as conn:
         cur = conn.cursor()
         try:
             cur.execute(query, (game_id,))
-            return cur.fetchall()
+            rows = cur.fetchall()
         except Exception:
-            # Fallback if seat_number vs seat_position differs
             conn.rollback()
-            query_fallback = """
-                SELECT 
-                    gp.participant_id,
-                    gp.player_id,
-                    gp.deck_id,
-                    gp.mulligan_count,
-                    gp.is_winner,
-                    p.display_name AS player_name,
-                    d.deck_name,
-                    d.owner_id AS deck_owner_id
-                FROM game_participants gp
-                JOIN players p ON gp.player_id = p.player_id
-                JOIN decks d ON gp.deck_id = d.deck_id
-                WHERE gp.game_id = %s;
-            """
-            cur.execute(query_fallback, (game_id,))
-            results = cur.fetchall()
-            # Assign artificial seat positions if column is missing
-            formatted = []
-            for idx, r in enumerate(results, start=1):
-                item = dict(r)
-                item['seat_position'] = idx
-                formatted.append(item)
-            return formatted
+            # If game_id column is named id or session_id
+            cur.execute("SELECT * FROM game_participants WHERE session_id = %s;", (game_id,))
+            rows = cur.fetchall()
+
+        if not rows:
+            return []
+
+        # Convert to dicts
+        participants = [dict(r) for r in rows]
+        
+        # Sort by seat if column exists, otherwise keep order
+        participants.sort(key=lambda x: x.get('seat_number', x.get('seat_position', x.get('seat', 0))))
+        
+        return participants
 
 def update_game_session_details(game_id, total_turns, duration_minutes, win_condition, notes, bracket, medium):
     """Updates high-level game session details."""
@@ -504,7 +478,7 @@ def update_game_session_details(game_id, total_turns, duration_minutes, win_cond
         cur.execute(query, (total_turns, duration_minutes, win_condition, notes, bracket, medium, game_id))
 
 def update_game_participant(participant_id, player_id, deck_id, mulligan_count, is_winner):
-    """Updates an individual participant seat record."""
+    """Updates an individual participant seat record safely."""
     query = """
         UPDATE game_participants
         SET player_id = %s, deck_id = %s, mulligan_count = %s, is_winner = %s
@@ -512,4 +486,14 @@ def update_game_participant(participant_id, player_id, deck_id, mulligan_count, 
     """
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute(query, (player_id, deck_id, mulligan_count, is_winner, participant_id))
+        try:
+            cur.execute(query, (player_id, deck_id, mulligan_count, is_winner, participant_id))
+        except Exception:
+            conn.rollback()
+            # Fallback if primary key column is named 'id'
+            query_alt = """
+                UPDATE game_participants
+                SET player_id = %s, deck_id = %s, mulligan_count = %s, is_winner = %s
+                WHERE id = %s;
+            """
+            cur.execute(query_alt, (player_id, deck_id, mulligan_count, is_winner, participant_id))
