@@ -287,7 +287,7 @@ if tab_log:
                             # Show ONLY decks owned by the selected player
                             available_decks = db.fetch_player_decks(selected_player_id)
                             if available_decks:
-                                deck_dict = {d['deck_name']: d['deck_id'] for d in available_decks}
+                                deck_dict = {f"{d['deck_name']} (⚡ Bracket {d.get('bracket', 3)})": d['deck_id'] for d in available_decks}
                                 selected_deck_name = st.selectbox(
                                     "Deck", 
                                     list(deck_dict.keys()),
@@ -397,10 +397,18 @@ if tab_deck:
             player_dict = {p['display_name']: p['player_id'] for p in players}
             player_names = list(player_dict.keys())
 
-            # Fetch global decks for borrowed deck picker
-            all_global_decks = db.fetch_all_active_decks() if hasattr(db, 'fetch_all_active_decks') else []
+            col_o1, col_o2 = st.columns([2, 1])
+            with col_o1:
+                owner_name = st.selectbox("Who owns this deck?", player_names, index=None, placeholder="Select a player...")
+            with col_o2:
+                new_deck_bracket = st.selectbox(
+                    "Deck Power Bracket",
+                    options=[1, 2, 3, 4, 5],
+                    index=2,
+                    help="Bracket 1: Precon | Bracket 2: Low-Mid | Bracket 3: High/Optimized | Bracket 4: Very High | Bracket 5: cEDH",
+                    key="add_deck_power_bracket"
+                )
 
-            owner_name = st.selectbox("Who owns this deck?", player_names, index=None, placeholder="Select a player...")
             st.divider()
             
             import_mox, import_manual = st.tabs(["🔗 Import from Moxfield", "✍️ Manual Entry"])
@@ -441,8 +449,8 @@ if tab_deck:
                                         comm_id = db.get_or_create_commander(comm_name, color_str)
                                         commander_ids.append(comm_id)
                                     
-                                    db.create_deck(owner_id, deck_name, commander_ids)
-                                    st.success(f"Successfully imported **{deck_name}**!")
+                                    db.create_deck(owner_id, deck_name, commander_ids, bracket=new_deck_bracket)
+                                    st.success(f"Successfully imported **{deck_name}** (Bracket {new_deck_bracket})!")
                                     st.balloons()
                                     st.rerun()
 
@@ -478,8 +486,8 @@ if tab_deck:
                             comm2_id = db.get_or_create_commander(comm2_name.strip(), comm2_colors.strip().upper())
                             commander_ids.append(comm2_id)
 
-                        db.create_deck(owner_id, manual_deck_name.strip(), commander_ids)
-                        st.success(f"Deck '{manual_deck_name}' created with {len(commander_ids)} commander(s)!")
+                        db.create_deck(owner_id, manual_deck_name.strip(), commander_ids, bracket=new_deck_bracket)
+                        st.success(f"Deck '{manual_deck_name}' (Bracket {new_deck_bracket}) created with {len(commander_ids)} commander(s)!")
 
 # ------------------------------------------------------------------------------
 # TAB 3: ADMIN CONTROLS (ADMIN ONLY - PIN A)
@@ -665,7 +673,7 @@ if tab_admin:
                     user_decks = db.fetch_player_decks(owner_id)
 
                     if user_decks:
-                        deck_options = {d['deck_name']: d['deck_id'] for d in user_decks}
+                        deck_options = {d['deck_name']: d for d in user_decks}
                         selected_deck_name = st.selectbox(
                             "Select Deck to Modify", 
                             list(deck_options.keys()), 
@@ -674,18 +682,27 @@ if tab_admin:
                         )
 
                         if selected_deck_name:
-                            selected_deck_id = deck_options[selected_deck_name]
+                            deck_obj = deck_options[selected_deck_name]
+                            selected_deck_id = deck_obj['deck_id']
+                            curr_bracket = int(deck_obj.get('bracket', 3))
 
-                            col_e1, col_e2 = st.columns(2)
+                            col_e1, col_e2, col_e3 = st.columns([2, 2, 1])
                             with col_e1:
                                 new_name = st.text_input("Deck Name", value=selected_deck_name, key=f"input_rename_deck_{selected_deck_id}")
                             with col_e2:
-                                # Allow reassigning ownership to another player if sold/traded
+                                # Allow reassigning ownership to another player
                                 new_owner_name = st.selectbox(
                                     "Transfer Ownership To", 
                                     list(player_dict.keys()), 
                                     index=list(player_dict.keys()).index(selected_edit_owner),
                                     key=f"input_reassign_owner_{selected_deck_id}"
+                                )
+                            with col_e3:
+                                edit_deck_bracket = st.selectbox(
+                                    "Power Bracket",
+                                    options=[1, 2, 3, 4, 5],
+                                    index=curr_bracket - 1,
+                                    key=f"input_deck_bracket_{selected_deck_id}"
                                 )
 
                             col_btn_update, col_btn_del = st.columns(2)
@@ -696,7 +713,7 @@ if tab_admin:
                                         st.error("Deck name cannot be empty.")
                                     else:
                                         target_owner_id = player_dict[new_owner_name]
-                                        db.update_deck_details(selected_deck_id, new_name.strip(), target_owner_id)
+                                        db.update_deck_details(selected_deck_id, new_name.strip(), target_owner_id, bracket=edit_deck_bracket)
                                         st.toast(f"Updated '{new_name}'!", icon="✅")
                                         st.success("Deck updated successfully!")
                                         st.rerun()

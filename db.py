@@ -55,18 +55,19 @@ def fetch_commanders():
         return cur.fetchall()
 
 def fetch_player_decks(player_id):
-    """Fetches all decks for a player, formatting partner commanders as 'Comm A // Comm B'."""
+    """Fetches all decks for a player including bracket level, formatting partner commanders as 'Comm A // Comm B'."""
     query = """
         SELECT 
             d.deck_id,
             d.deck_name,
+            COALESCE(d.bracket, 3) AS bracket,
             STRING_AGG(c.name, ' // ') AS commander_names,
             STRING_AGG(c.color_identity, '') AS composite_color_identity
         FROM decks d
         LEFT JOIN deck_commanders dc ON d.deck_id = dc.deck_id
         LEFT JOIN commanders c ON dc.commander_id = c.commander_id
         WHERE d.player_id = %s
-        GROUP BY d.deck_id, d.deck_name
+        GROUP BY d.deck_id, d.deck_name, d.bracket
         ORDER BY d.deck_name;
     """
     with get_db() as conn:
@@ -74,14 +75,14 @@ def fetch_player_decks(player_id):
         cur.execute(query, (player_id,))
         return cur.fetchall()
 
-def create_deck(player_id, deck_name, commander_ids):
-    """Creates a deck and links 1 or 2 commanders (partner commanders)."""
-    query_deck = "INSERT INTO decks (player_id, deck_name) VALUES (%s, %s) RETURNING deck_id;"
+def create_deck(player_id, deck_name, commander_ids, bracket=3):
+    """Creates a deck with power bracket and links 1 or 2 commanders (partner commanders)."""
+    query_deck = "INSERT INTO decks (player_id, deck_name, bracket) VALUES (%s, %s, %s) RETURNING deck_id;"
     query_link = "INSERT INTO deck_commanders (deck_id, commander_id) VALUES (%s, %s);"
     
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute(query_deck, (player_id, deck_name))
+        cur.execute(query_deck, (player_id, deck_name, bracket))
         deck_id = cur.fetchone()['deck_id']
         
         # Link all commanders (handles single or partner commanders)
@@ -419,16 +420,16 @@ def update_live_session(session_key, running, start_time, elapsed, turns):
         cur = conn.cursor()
         cur.execute(query, (session_key, running, start_time, elapsed, turns))
 
-def update_deck_details(deck_id, new_deck_name, new_owner_id, bracket=None):
-    """Updates deck name, owner, and optional bracket rating."""
+def update_deck_details(deck_id, new_deck_name, new_player_id, bracket=3):
+    """Updates deck name, owner, and power bracket level."""
     query = """
         UPDATE decks
-        SET deck_name = %s, owner_id = %s
+        SET deck_name = %s, player_id = %s, bracket = %s
         WHERE deck_id = %s;
     """
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute(query, (new_deck_name, new_owner_id, deck_id))
+        cur.execute(query, (new_deck_name, new_player_id, bracket, deck_id))
 
 def delete_deck(deck_id):
     """Permanently deletes a deck and its commander associations."""
