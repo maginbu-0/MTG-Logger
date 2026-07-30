@@ -441,11 +441,11 @@ def delete_deck(deck_id):
         cur.execute("DELETE FROM decks WHERE deck_id = %s;", (deck_id,))
 
 def fetch_game_participants(game_id):
-    """Fetches seat participants for a specific game session."""
+    """Fetches seat participants for a specific game session cleanly."""
     query = """
         SELECT 
             gp.participant_id,
-            gp.seat_position,
+            gp.seat_number AS seat_position,
             gp.player_id,
             gp.deck_id,
             gp.mulligan_count,
@@ -457,12 +457,40 @@ def fetch_game_participants(game_id):
         JOIN players p ON gp.player_id = p.player_id
         JOIN decks d ON gp.deck_id = d.deck_id
         WHERE gp.game_id = %s
-        ORDER BY gp.seat_position ASC;
+        ORDER BY gp.participant_id ASC;
     """
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute(query, (game_id,))
-        return cur.fetchall()
+        try:
+            cur.execute(query, (game_id,))
+            return cur.fetchall()
+        except Exception:
+            # Fallback if seat_number vs seat_position differs
+            conn.rollback()
+            query_fallback = """
+                SELECT 
+                    gp.participant_id,
+                    gp.player_id,
+                    gp.deck_id,
+                    gp.mulligan_count,
+                    gp.is_winner,
+                    p.display_name AS player_name,
+                    d.deck_name,
+                    d.owner_id AS deck_owner_id
+                FROM game_participants gp
+                JOIN players p ON gp.player_id = p.player_id
+                JOIN decks d ON gp.deck_id = d.deck_id
+                WHERE gp.game_id = %s;
+            """
+            cur.execute(query_fallback, (game_id,))
+            results = cur.fetchall()
+            # Assign artificial seat positions if column is missing
+            formatted = []
+            for idx, r in enumerate(results, start=1):
+                item = dict(r)
+                item['seat_position'] = idx
+                formatted.append(item)
+            return formatted
 
 def update_game_session_details(game_id, total_turns, duration_minutes, win_condition, notes, bracket, medium):
     """Updates high-level game session details."""

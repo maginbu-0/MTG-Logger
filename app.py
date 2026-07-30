@@ -767,17 +767,18 @@ if tab_admin:
                         updated_seats = []
 
                         for seat in seat_participants:
-                            s_pos = seat['seat_position']
-                            p_id = seat['player_id']
-                            d_id = seat['deck_id']
-                            part_id = seat['participant_id']
+                            seat_dict = dict(seat)
+                            s_pos = seat_dict.get('seat_position', 1)
+                            p_id = seat_dict.get('player_id')
+                            d_id = seat_dict.get('deck_id')
+                            part_id = seat_dict.get('participant_id')
                             
-                            is_currently_borrowed = (p_id != seat['deck_owner_id'])
+                            is_currently_borrowed = (p_id != seat_dict.get('deck_owner_id'))
 
-                            with st.expander(f"👤 Seat {s_pos}: {seat['player_name']} ({'🎁 Borrowed Deck' if is_currently_borrowed else 'Owned Deck'})", expanded=True):
+                            with st.expander(f"👤 Seat {s_pos}: {seat_dict.get('player_name', 'Player')} ({'🎁 Borrowed Deck' if is_currently_borrowed else 'Owned Deck'})", expanded=True):
                                 # Player Selection
                                 player_names = list(player_dict.keys())
-                                curr_p_name = seat['player_name']
+                                curr_p_name = seat_dict.get('player_name')
                                 p_idx = player_names.index(curr_p_name) if curr_p_name in player_names else 0
                                 
                                 new_seat_player = st.selectbox("Player", player_names, index=p_idx, key=f"edit_p_seat_{part_id}")
@@ -799,7 +800,7 @@ if tab_admin:
                                     if player_decks:
                                         p_deck_dict = {d['deck_name']: d['deck_id'] for d in player_decks}
                                         p_deck_names = list(p_deck_dict.keys())
-                                        curr_d_name = seat['deck_name']
+                                        curr_d_name = seat_dict.get('deck_name')
                                         d_idx = p_deck_names.index(curr_d_name) if curr_d_name in p_deck_names else 0
 
                                         selected_deck_name = st.selectbox("Owned Deck", p_deck_names, index=d_idx, key=f"edit_d_owned_{part_id}")
@@ -810,9 +811,9 @@ if tab_admin:
 
                                 scol1, scol2 = st.columns(2)
                                 with scol1:
-                                    edit_mull = st.number_input("Mulligans", 0, 7, value=int(seat['mulligan_count']), key=f"edit_mull_{part_id}")
+                                    edit_mull = st.number_input("Mulligans", 0, 7, value=int(seat_dict.get('mulligan_count', 0)), key=f"edit_mull_{part_id}")
                                 with scol2:
-                                    edit_win = st.checkbox("Winner 🏆", value=bool(seat['is_winner']), key=f"edit_win_{part_id}")
+                                    edit_win = st.checkbox("Winner 🏆", value=bool(seat_dict.get('is_winner', False)), key=f"edit_win_{part_id}")
 
                                 updated_seats.append({
                                     "participant_id": part_id,
