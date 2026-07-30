@@ -926,7 +926,7 @@ with tab_stats:
             winner_name = next((s['player_name'] for s in g['seats'] if s['is_winner']), "Unknown")
             winner_deck = next((s['deck_name'] for s in g['seats'] if s['is_winner']), "Unknown Deck")
             
-            with st.expander(f"🏆 Game #{g['game_id']} Winner: {winner_name} ({winner_deck}) — {g['win_condition']}", expanded=True):
+            with st.expander(f"🏆 Game #{g['game_id']} Winner: {winner_name} ({winner_deck}) — {g['win_condition']}", expanded=False):
                 sc1, sc2, sc3 = st.columns(3)
                 with sc1:
                     st.caption(f"⏱️ **Duration:** {g['duration_minutes']} mins | **Turns:** Turn {g['total_turns']}")
