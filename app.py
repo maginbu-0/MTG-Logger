@@ -332,22 +332,28 @@ if tab_log:
                     db.update_live_session(active_session_key, False, None, 0, 1)
 
                     if submit_match:
-                        # FULL CLEAR: Increment form version so Streamlit generates completely new, blank widgets
+                        # FULL CLEAR: Increment form version so Streamlit generates completely fresh, blank widgets
                         st.session_state.form_version += 1
                         st.toast("Game logged & form cleared!", icon="🧹")
 
                     elif rematch_submit:
-                        # REMATCH: Keep players AND decks! Reset mulligans, winner checkboxes, win con & notes
-                        for seat in range(1, num_players + 1):
-                            if f"seat_mull_{seat}_{form_v}" in st.session_state:
-                                st.session_state[f"seat_mull_{seat}_{form_v}"] = 0
-                            if f"seat_win_{seat}_{form_v}" in st.session_state:
-                                st.session_state[f"seat_win_{seat}_{form_v}"] = False
+                        # REMATCH: Delete ONLY the keys we want to reset (mulligans, winners, win con, notes).
+                        # Deleting keys instead of assigning values avoids StreamlitAPIException!
+                        keys_to_reset = [
+                            f"input_win_condition_{form_v}",
+                            f"input_match_notes_{form_v}"
+                        ]
                         
-                        if f"input_win_condition_{form_v}" in st.session_state:
-                            st.session_state[f"input_win_condition_{form_v}"] = None
-                        if f"input_match_notes_{form_v}" in st.session_state:
-                            st.session_state[f"input_match_notes_{form_v}"] = ""
+                        for seat in range(1, num_players + 1):
+                            keys_to_reset.extend([
+                                f"seat_mull_{seat}_{form_v}",
+                                f"seat_win_{seat}_{form_v}"
+                            ])
+                        
+                        for k in keys_to_reset:
+                            if k in st.session_state:
+                                del st.session_state[k]
+
                         st.toast("Game logged! Ready for Rematch with same pod & decks!", icon="🔁")
 
                     st.rerun()
