@@ -640,3 +640,68 @@ def fetch_games_by_date(selected_date):
             conn.rollback()
             cur.execute(query_fallback, (date_str,))
             return cur.fetchall()
+
+def fetch_daily_session_summary(selected_date):
+    """Aggregates all games, player records, and top performers for a single date in local AST time."""
+    date_str = str(selected_date)
+    
+    with get_db() as conn:
+        cur = conn.cursor()
+        
+        # 1. Overview metrics for the day
+        query_overview = """
+            SELECT 
+                COUNT(DISTINCT g.game_id) AS total_games,
+                ROUND(AVG(g.total_turns), 1) AS avg_turns,
+                ROUND(AVG(g.duration_minutes), 0) AS avg_duration,
+                SUM(g.duration_minutes) AS total_playtime
+            FROM games g
+            WHERE TO_CHAR(g.played_at - INTERVAL '4 hours', 'YYYY-MM-DD') = %s;
+        """
+        cur.execute(query_overview, (date_str,))
+        overview = cur.fetchone()
+        
+        if not overview or overview['total_games'] == 0:
+            return None
+            
+        # 2. Player Performance Breakdown for the day
+        query_players = """
+            SELECT 
+                p.display_name AS player_name,
+                COUNT(gp.game_id) AS games_played,
+                SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END) AS wins,
+                ROUND((SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END)::numeric / COUNT(gp.game_id)) * 100, 1) AS win_rate
+            FROM game_participants gp
+            JOIN games g ON gp.game_id = g.game_id
+            JOIN players p ON gp.player_id = p.player_id
+            WHERE TO_CHAR(g.played_at - INTERVAL '4 hours', 'YYYY-MM-DD') = %s
+            GROUP BY p.player_id, p.display_name
+            ORDER BY wins DESC, games_played ASC;
+        """
+        cur.execute(query_players, (date_str,))
+        players_summary = cur.fetchall()
+        
+        # 3. Deck Performance Breakdown for the day
+        query_decks = """
+            SELECT 
+                d.deck_name,
+                p.display_name AS owner_name,
+                COUNT(gp.game_id) AS games_played,
+                SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END) AS wins,
+                ROUND((SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END)::numeric / COUNT(gp.game_id)) * 100, 1) AS win_rate
+            FROM game_participants gp
+            JOIN games g ON gp.game_id = g.game_id
+            JOIN decks d ON gp.deck_id = d.deck_id
+            JOIN players p ON gp.player_id = p.player_id
+            WHERE TO_CHAR(g.played_at - INTERVAL '4 hours', 'YYYY-MM-DD') = %s
+            GROUP BY d.deck_id, d.deck_name, p.display_name
+            ORDER BY wins DESC, games_played ASC;
+        """
+        cur.execute(query_decks, (date_str,))
+        decks_summary = cur.fetchall()
+        
+        return {
+            "overview": dict(overview),
+            "players": [dict(r) for r in players_summary],
+            "decks": [dict(r) for r in decks_summary]
+        }
