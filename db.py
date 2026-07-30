@@ -596,7 +596,10 @@ def fetch_last_n_games_detailed(limit=2):
         return detailed_games
 
 def fetch_games_by_date(selected_date):
-    """Fetches games logged on a specific date, converted cleanly to AST local date."""
+    """Fetches games logged on a specific date in AST timezone without date-type mismatch issues."""
+    date_str = str(selected_date)  # Convert datetime.date object to "YYYY-MM-DD" string
+    
+    # Primary query using AST timezone offset
     query = """
         SELECT 
             g.game_id,
@@ -607,19 +610,33 @@ def fetch_games_by_date(selected_date):
         FROM games g
         JOIN game_participants gp ON g.game_id = gp.game_id
         JOIN players p ON gp.player_id = p.player_id
-        WHERE (
-            -- Subtract 4 hours (AST offset) directly from UTC timestamp to get true local calendar date
-            (COALESCE(g.played_at, g.created_at) - INTERVAL '4 hours')::date = %s
-        )
+        WHERE TO_CHAR(COALESCE(g.played_at, g.created_at) AT TIME ZONE 'America/Santo_Domingo', 'YYYY-MM-DD') = %s
         GROUP BY g.game_id, g.total_turns, g.win_condition, g.notes
         ORDER BY g.game_id DESC;
     """
+    
+    # Fallback query subtracting 4 hours directly
+    query_fallback = """
+        SELECT 
+            g.game_id,
+            g.total_turns,
+            g.win_condition,
+            COALESCE(g.notes, '') AS notes,
+            STRING_AGG(p.display_name, ', ' ORDER BY gp.seat_position) AS participants
+        FROM games g
+        JOIN game_participants gp ON g.game_id = gp.game_id
+        JOIN players p ON gp.player_id = p.player_id
+        WHERE TO_CHAR(COALESCE(g.played_at, g.created_at) - INTERVAL '4 hours', 'YYYY-MM-DD') = %s
+        GROUP BY g.game_id, g.total_turns, g.win_condition, g.notes
+        ORDER BY g.game_id DESC;
+    """
+    
     with get_db() as conn:
         cur = conn.cursor()
         try:
-            cur.execute(query, (selected_date,))
+            cur.execute(query, (date_str,))
             return cur.fetchall()
-        except Exception as e:
+        except Exception:
             conn.rollback()
-            print(f"Error fetching games by date: {e}")
-            return []
+            cur.execute(query_fallback, (date_str,))
+            return cur.fetchall()
