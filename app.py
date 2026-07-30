@@ -189,8 +189,8 @@ if tab_log:
             player_dict = {p['display_name']: p['player_id'] for p in players}
             player_names = list(player_dict.keys())
 
-            # Fetch global decks for borrowed deck picker
-            all_global_decks = db.fetch_all_active_decks() if hasattr(db, 'fetch_all_active_decks') else []
+            # Fetch all decks across the playgroup using built-in db function
+            all_global_decks = db.fetch_all_decks_with_owners() if hasattr(db, 'fetch_all_decks_with_owners') else []
 
             col1, col2, col3, col4 = st.columns(4)
             with col1:
