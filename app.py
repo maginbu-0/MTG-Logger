@@ -2,6 +2,12 @@ import streamlit as st
 import requests
 import pandas as pd
 import db
+from zoneinfo import ZoneInfo
+import datetime
+
+# Helper to get local AST current date
+def get_ast_today():
+    return datetime.datetime.now(ZoneInfo("America/Santo_Domingo")).date()
 
 # Page setup
 st.set_page_config(
@@ -716,7 +722,7 @@ if tab_admin_matches:
             
             col_filter1, col_filter2 = st.columns([1, 2])
             with col_filter1:
-                filter_date = st.date_input("Filter Matches by Date", value=datetime.date.today(), key="admin_edit_match_date")
+                filter_date = st.date_input("Filter Matches by Date", value=get_ast_today(), key="admin_edit_match_date")
             
             # Fetch games for chosen date
             games_for_date = db.fetch_games_by_date(filter_date) if hasattr(db, 'fetch_games_by_date') else db.fetch_recent_games(limit=25)
