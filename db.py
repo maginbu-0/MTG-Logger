@@ -467,15 +467,38 @@ def fetch_game_participants(game_id):
         return participants
 
 def update_game_session_details(game_id, total_turns, duration_minutes, win_condition, notes, bracket, medium):
-    """Updates high-level game session details."""
-    query = """
+    """Updates high-level game session details with fallback for table names."""
+    # Attempt 1: 'games' table (most likely matching log_game_session)
+    query_games = """
+        UPDATE games
+        SET total_turns = %s, duration_minutes = %s, win_condition = %s, notes = %s, bracket = %s, medium = %s
+        WHERE game_id = %s;
+    """
+    # Attempt 2: 'game_sessions' table
+    query_sessions = """
         UPDATE game_sessions
         SET total_turns = %s, duration_minutes = %s, win_condition = %s, notes = %s, bracket = %s, medium = %s
         WHERE game_id = %s;
     """
+    params = (total_turns, duration_minutes, win_condition, notes, bracket, medium, game_id)
+    
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute(query, (total_turns, duration_minutes, win_condition, notes, bracket, medium, game_id))
+        try:
+            cur.execute(query_games, params)
+        except Exception:
+            conn.rollback()
+            try:
+                cur.execute(query_sessions, params)
+            except Exception:
+                conn.rollback()
+                # Attempt 3: If primary key column is 'id' instead of 'game_id'
+                query_alt = """
+                    UPDATE games
+                    SET total_turns = %s, duration_minutes = %s, win_condition = %s, notes = %s, bracket = %s, medium = %s
+                    WHERE id = %s;
+                """
+                cur.execute(query_alt, params)
 
 def update_game_participant(participant_id, player_id, deck_id, mulligan_count, is_winner):
     """Updates an individual participant seat record safely."""
@@ -484,16 +507,17 @@ def update_game_participant(participant_id, player_id, deck_id, mulligan_count, 
         SET player_id = %s, deck_id = %s, mulligan_count = %s, is_winner = %s
         WHERE participant_id = %s;
     """
+    params = (player_id, deck_id, mulligan_count, is_winner, participant_id)
+    
     with get_db() as conn:
         cur = conn.cursor()
         try:
-            cur.execute(query, (player_id, deck_id, mulligan_count, is_winner, participant_id))
+            cur.execute(query, params)
         except Exception:
             conn.rollback()
-            # Fallback if primary key column is named 'id'
             query_alt = """
                 UPDATE game_participants
                 SET player_id = %s, deck_id = %s, mulligan_count = %s, is_winner = %s
                 WHERE id = %s;
             """
-            cur.execute(query_alt, (player_id, deck_id, mulligan_count, is_winner, participant_id))
+            cur.execute(query_alt, params)
