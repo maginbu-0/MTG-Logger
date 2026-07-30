@@ -914,7 +914,7 @@ with tab_stats:
         st.metric("Total Decks Registered", total_registered_decks)
         st.metric("Avg Game Length", f"{int(avg_duration)} mins" if avg_duration else "N/A")
     with col_m3:
-        st.metric("Most Played Fleet Bracket", bracket_val, delta=bracket_sub, delta_color="off")
+        st.metric("Most Played Bracket", bracket_val, delta=bracket_sub, delta_color="off")
     
     st.divider()
 
