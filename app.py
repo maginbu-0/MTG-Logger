@@ -319,16 +319,18 @@ if tab_log:
                     }
                     db.log_game_session(game_data, participants_input)
                     
-                    # Reset session state and db row for this user
+                    # Reset session state and db row for live timer
                     st.session_state.timer_running = False
                     st.session_state.timer_start_time = None
                     st.session_state.timer_elapsed_seconds = 0
                     st.session_state.live_turn_count = 1
                     db.update_live_session(active_session_key, False, None, 0, 1)
 
-                    keys_to_delete = ["input_total_turns", "input_duration", "input_bracket", "input_medium", "input_win_condition", "input_match_notes"]
+                    # Form input keys to reset
+                    keys_to_delete = ["input_total_turns", "input_duration", "input_win_condition", "input_match_notes"]
 
                     if submit_match:
+                        # FULL CLEAR: Delete players, decks, mulligans, and winner check
                         for seat in range(1, 5):
                             keys_to_delete.extend([
                                 f"seat_player_{seat}",
@@ -339,13 +341,15 @@ if tab_log:
                         st.toast("Game logged & form cleared!", icon="🧹")
 
                     elif rematch_submit:
+                        # REMATCH: Keep players AND decks! Only reset mulligans and winner check
                         for seat in range(1, 5):
                             keys_to_delete.extend([
                                 f"seat_mull_{seat}",
                                 f"seat_win_{seat}"
                             ])
-                        st.toast("Game logged! Ready for Rematch with same pod!", icon="🔁")
+                        st.toast("Game logged! Ready for Rematch with same pod & decks!", icon="🔁")
 
+                    # Delete only specified keys from session state
                     for k in keys_to_delete:
                         if k in st.session_state:
                             del st.session_state[k]
