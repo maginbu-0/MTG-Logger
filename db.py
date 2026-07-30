@@ -390,3 +390,31 @@ def get_medium_stats():
         cur = conn.cursor()
         cur.execute(query)
         return cur.fetchall()
+
+def fetch_live_session(session_key="Viewer"):
+    """Fetches the current live match session state for a specific user role/logger."""
+    query = "SELECT timer_running, timer_start_time, timer_elapsed_seconds, live_turn_count FROM live_game_sessions WHERE session_key = %s;"
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query, (session_key,))
+        row = cur.fetchone()
+        if row:
+            return dict(row)
+        return {"timer_running": False, "timer_start_time": None, "timer_elapsed_seconds": 0, "live_turn_count": 1}
+
+def update_live_session(session_key, running, start_time, elapsed, turns):
+    """Upserts (inserts or updates) the live match session state for a specific user role/logger."""
+    query = """
+        INSERT INTO live_game_sessions (session_key, timer_running, timer_start_time, timer_elapsed_seconds, live_turn_count, updated_at)
+        VALUES (%s, %s, %s, %s, %s, NOW())
+        ON CONFLICT (session_key) 
+        DO UPDATE SET 
+            timer_running = EXCLUDED.timer_running,
+            timer_start_time = EXCLUDED.timer_start_time,
+            timer_elapsed_seconds = EXCLUDED.timer_elapsed_seconds,
+            live_turn_count = EXCLUDED.live_turn_count,
+            updated_at = NOW();
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query, (session_key, running, start_time, elapsed, turns))

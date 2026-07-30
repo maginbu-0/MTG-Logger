@@ -71,34 +71,27 @@ if tab_log:
     with tab_log:
         st.subheader("⚔️ Live Match Companion & Logger")
 
-        # 1. READ SAVED STATE FROM URL QUERY PARAMS (PERSISTS ON MOBILE REFRESH)
-        query_params = st.query_params
+        # Session key based on current authenticated role (e.g., 'Admin' or 'Logger')
+        active_session_key = st.session_state.get("user_role", "Logger")
 
-        if "timer_running" not in st.session_state:
-            if "mtg_timer_running" in query_params:
-                st.session_state.timer_running = query_params.get("mtg_timer_running") == "true"
-                st.session_state.timer_start_time = float(query_params.get("mtg_start_time", 0)) if query_params.get("mtg_start_time") else None
-                st.session_state.timer_elapsed_seconds = int(query_params.get("mtg_elapsed", 0))
-                st.session_state.live_turn_count = int(query_params.get("mtg_turns", 1))
-            else:
-                st.session_state.timer_running = False
-                st.session_state.timer_start_time = None
-                st.session_state.timer_elapsed_seconds = 0
-                st.session_state.live_turn_count = 1
+        # 1. LOAD LIVE SESSION FROM DATABASE FOR THIS SPECIFIC USER ROLE
+        if "session_loaded_from_db" not in st.session_state:
+            db_session = db.fetch_live_session(active_session_key)
+            st.session_state.timer_running = db_session["timer_running"]
+            st.session_state.timer_start_time = db_session["timer_start_time"]
+            st.session_state.timer_elapsed_seconds = db_session["timer_elapsed_seconds"]
+            st.session_state.live_turn_count = db_session["live_turn_count"]
+            st.session_state.session_loaded_from_db = True
 
-        # Helper function to push timer state to URL parameters
-        def sync_companion_to_url():
-            st.query_params.update({
-                "mtg_timer_running": "true" if st.session_state.timer_running else "false",
-                "mtg_start_time": str(st.session_state.timer_start_time or ""),
-                "mtg_elapsed": str(st.session_state.timer_elapsed_seconds),
-                "mtg_turns": str(st.session_state.live_turn_count)
-            })
-
-        def clear_url_timer():
-            for key in ["mtg_timer_running", "mtg_start_time", "mtg_elapsed", "mtg_turns"]:
-                if key in st.query_params:
-                    del st.query_params[key]
+        # Helper function to sync session state back to Supabase under user's role
+        def sync_companion_to_db():
+            db.update_live_session(
+                active_session_key,
+                st.session_state.timer_running,
+                st.session_state.timer_start_time,
+                st.session_state.timer_elapsed_seconds,
+                st.session_state.live_turn_count
+            )
 
         # 2. Live Time Calculation
         import time
@@ -107,7 +100,7 @@ if tab_log:
             current_elapsed += int(time.time() - st.session_state.timer_start_time)
 
         # Live Companion Controller
-        with st.expander("⏱️ Live Game Companion (Timer & Turn Counter)", expanded=True):
+        with st.expander(f"⏱️ Live Game Companion ({active_session_key} Pod)", expanded=True):
             col_timer, col_turns = st.columns(2)
             
             with col_timer:
@@ -124,14 +117,14 @@ if tab_log:
                         if st.button("▶️ Start / Resume", use_container_width=True, key="btn_timer_start"):
                             st.session_state.timer_running = True
                             st.session_state.timer_start_time = time.time()
-                            sync_companion_to_url()
+                            sync_companion_to_db()
                             st.rerun()
                     else:
                         if st.button("⏸️ Pause", use_container_width=True, key="btn_timer_pause"):
                             st.session_state.timer_running = False
                             st.session_state.timer_elapsed_seconds = current_elapsed
                             st.session_state.timer_start_time = None
-                            sync_companion_to_url()
+                            sync_companion_to_db()
                             st.rerun()
                 
                 with t_col2:
@@ -140,7 +133,7 @@ if tab_log:
                         st.session_state.timer_start_time = None
                         st.session_state.timer_elapsed_seconds = 0
                         st.session_state.live_turn_count = 1
-                        clear_url_timer()
+                        sync_companion_to_db()
                         st.rerun()
 
             with col_turns:
@@ -152,12 +145,12 @@ if tab_log:
                     if st.button("➖ Turn", use_container_width=True, key="btn_sub_turn"):
                         if st.session_state.live_turn_count > 1:
                             st.session_state.live_turn_count -= 1
-                            sync_companion_to_url()
+                            sync_companion_to_db()
                             st.rerun()
                 with turn_col2:
                     if st.button("➕ Next Turn", type="primary", use_container_width=True, key="btn_add_turn"):
                         st.session_state.live_turn_count += 1
-                        sync_companion_to_url()
+                        sync_companion_to_db()
                         st.rerun()
 
             st.divider()
@@ -173,7 +166,7 @@ if tab_log:
                 st.session_state["input_total_turns"] = int(st.session_state.live_turn_count)
                 st.session_state["input_duration"] = int(final_minutes)
                 
-                sync_companion_to_url()
+                sync_companion_to_db()
                 st.toast(f"Pushed {final_minutes} mins and Turn {st.session_state.live_turn_count} to form!", icon="⏱️")
                 st.rerun()
 
@@ -326,12 +319,12 @@ if tab_log:
                     }
                     db.log_game_session(game_data, participants_input)
                     
-                    # Clear live companion state & URL query params on successful save
+                    # Reset session state and db row for this user
                     st.session_state.timer_running = False
                     st.session_state.timer_start_time = None
                     st.session_state.timer_elapsed_seconds = 0
                     st.session_state.live_turn_count = 1
-                    clear_url_timer()
+                    db.update_live_session(active_session_key, False, None, 0, 1)
 
                     keys_to_delete = ["input_total_turns", "input_duration", "input_bracket", "input_medium", "input_win_condition", "input_match_notes"]
 
