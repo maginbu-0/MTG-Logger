@@ -714,6 +714,134 @@ if tab_admin:
                     else:
                         st.info("This player has no registered decks.")
 
+        # Expander: Edit Logged Matches
+        with st.expander("✏️ Edit Logged Matches & Participants", expanded=False):
+            st.markdown("Select a game session to modify its details, seats, assigned decks, or borrowed status:")
+            
+            recent_games = db.fetch_recent_games(limit=25)
+            
+            if recent_games:
+                game_options = {}
+                for g in recent_games:
+                    label = f"Game #{g['game_id']} | Turns: {g['total_turns']} | Win: {g['win_condition']} ({g['participants']})"
+                    game_options[label] = g['game_id']
+                
+                selected_edit_game_label = st.selectbox("Select Match to Edit", list(game_options.keys()), index=None, key="admin_select_match_edit")
+                
+                if selected_edit_game_label:
+                    game_to_edit_id = game_options[selected_edit_game_label]
+                    
+                    # Fetch existing game and seat data
+                    game_data = next((g for g in recent_games if g['game_id'] == game_to_edit_id), None)
+                    seat_participants = db.fetch_game_participants(game_to_edit_id)
+                    all_global_decks = db.fetch_all_decks_with_owners() if hasattr(db, 'fetch_all_decks_with_owners') else []
+                    players = db.fetch_players()
+                    player_dict = {p['display_name']: p['player_id'] for p in players} if players else {}
+                    
+                    if game_data and seat_participants:
+                        st.markdown("#### 1. Match Details")
+                        ecol1, ecol2, ecol3, ecol4 = st.columns(4)
+                        
+                        with ecol1:
+                            edit_turns = st.number_input("Turns", 1, 50, value=int(game_data.get('total_turns', 8)), key=f"edit_turns_{game_to_edit_id}")
+                        with ecol2:
+                            edit_duration = st.number_input("Duration (mins)", 1, 500, value=int(game_data.get('duration_minutes', 45)), key=f"edit_dur_{game_to_edit_id}")
+                        with ecol3:
+                            edit_bracket = st.selectbox("Bracket", [1, 2, 3, 4, 5], index=int(game_data.get('bracket', 3)) - 1, key=f"edit_brack_{game_to_edit_id}")
+                        with ecol4:
+                            medium_opts = ["In Person 🃏", "Convoke 💻", "SpellTable 📹"]
+                            curr_med = game_data.get('medium', "In Person 🃏")
+                            med_idx = medium_opts.index(curr_med) if curr_med in medium_opts else 0
+                            edit_medium = st.selectbox("Medium", medium_opts, index=med_idx, key=f"edit_med_{game_to_edit_id}")
+
+                        edit_win_con = st.selectbox(
+                            "Win Condition",
+                            ["Combat Damage", "Infinite Combo", "Alternate Win-Con", "Commander Damage", "Scoop / Surrender"],
+                            index=["Combat Damage", "Infinite Combo", "Alternate Win-Con", "Commander Damage", "Scoop / Surrender"].index(game_data['win_condition']) if game_data.get('win_condition') in ["Combat Damage", "Infinite Combo", "Alternate Win-Con", "Commander Damage", "Scoop / Surrender"] else 0,
+                            key=f"edit_wincon_{game_to_edit_id}"
+                        )
+                        
+                        edit_notes = st.text_input("Match Notes", value=game_data.get('notes', ''), key=f"edit_notes_{game_to_edit_id}")
+
+                        st.markdown("#### 2. Seats & Decks (Retroactive Fixes)")
+                        updated_seats = []
+
+                        for seat in seat_participants:
+                            s_pos = seat['seat_position']
+                            p_id = seat['player_id']
+                            d_id = seat['deck_id']
+                            part_id = seat['participant_id']
+                            
+                            is_currently_borrowed = (p_id != seat['deck_owner_id'])
+
+                            with st.expander(f"👤 Seat {s_pos}: {seat['player_name']} ({'🎁 Borrowed Deck' if is_currently_borrowed else 'Owned Deck'})", expanded=True):
+                                # Player Selection
+                                player_names = list(player_dict.keys())
+                                curr_p_name = seat['player_name']
+                                p_idx = player_names.index(curr_p_name) if curr_p_name in player_names else 0
+                                
+                                new_seat_player = st.selectbox("Player", player_names, index=p_idx, key=f"edit_p_seat_{part_id}")
+                                new_seat_player_id = player_dict[new_seat_player]
+
+                                # Borrowed deck toggle override
+                                edit_borrowing = st.checkbox("🎁 Was this a borrowed deck?", value=is_currently_borrowed, key=f"edit_borrow_chk_{part_id}")
+
+                                if edit_borrowing:
+                                    global_deck_dict = {f"{d['deck_name']} (Owner: {d['owner_name']})": d['deck_id'] for d in all_global_decks}
+                                    curr_deck_label = next((k for k, v in global_deck_dict.items() if v == d_id), None)
+                                    g_keys = list(global_deck_dict.keys())
+                                    g_idx = g_keys.index(curr_deck_label) if curr_deck_label in g_keys else 0
+
+                                    selected_deck_label = st.selectbox("Borrowed Deck", g_keys, index=g_idx, key=f"edit_d_global_{part_id}")
+                                    new_seat_deck_id = global_deck_dict[selected_deck_label]
+                                else:
+                                    player_decks = db.fetch_player_decks(new_seat_player_id)
+                                    if player_decks:
+                                        p_deck_dict = {d['deck_name']: d['deck_id'] for d in player_decks}
+                                        p_deck_names = list(p_deck_dict.keys())
+                                        curr_d_name = seat['deck_name']
+                                        d_idx = p_deck_names.index(curr_d_name) if curr_d_name in p_deck_names else 0
+
+                                        selected_deck_name = st.selectbox("Owned Deck", p_deck_names, index=d_idx, key=f"edit_d_owned_{part_id}")
+                                        new_seat_deck_id = p_deck_dict[selected_deck_name]
+                                    else:
+                                        st.caption("⚠️ Selected player has no registered decks. Toggle 'Borrowed deck' above to pick from global list.")
+                                        new_seat_deck_id = d_id
+
+                                scol1, scol2 = st.columns(2)
+                                with scol1:
+                                    edit_mull = st.number_input("Mulligans", 0, 7, value=int(seat['mulligan_count']), key=f"edit_mull_{part_id}")
+                                with scol2:
+                                    edit_win = st.checkbox("Winner 🏆", value=bool(seat['is_winner']), key=f"edit_win_{part_id}")
+
+                                updated_seats.append({
+                                    "participant_id": part_id,
+                                    "player_id": new_seat_player_id,
+                                    "deck_id": new_seat_deck_id,
+                                    "mulligan_count": edit_mull,
+                                    "is_winner": edit_win
+                                })
+
+                        if st.button("💾 Save Match Edits", type="primary", use_container_width=True, key=f"btn_save_match_edit_{game_to_edit_id}"):
+                            winners_count = sum(1 for s in updated_seats if s['is_winner'])
+                            if winners_count != 1:
+                                st.warning("Please mark exactly ONE player as the winner.")
+                            else:
+                                # Save game session details
+                                db.update_game_session_details(
+                                    game_to_edit_id, edit_turns, edit_duration, edit_win_con, edit_notes, edit_bracket, edit_medium
+                                )
+                                # Save participant seat details
+                                for s in updated_seats:
+                                    db.update_game_participant(
+                                        s['participant_id'], s['player_id'], s['deck_id'], s['mulligan_count'], s['is_winner']
+                                    )
+                                st.toast(f"Game #{game_to_edit_id} updated successfully!", icon="✅")
+                                st.success("Match record updated!")
+                                st.rerun()
+            else:
+                st.info("No logged matches found.")
+
 # ------------------------------------------------------------------------------
 # TAB 4: ANALYTICS (PUBLIC / ALL ROLES)
 # ------------------------------------------------------------------------------

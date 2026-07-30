@@ -439,3 +439,49 @@ def delete_deck(deck_id):
         # Delete participant references or nullify if necessary, then delete deck
         cur.execute("DELETE FROM game_participants WHERE deck_id = %s;", (deck_id,))
         cur.execute("DELETE FROM decks WHERE deck_id = %s;", (deck_id,))
+
+def fetch_game_participants(game_id):
+    """Fetches seat participants for a specific game session."""
+    query = """
+        SELECT 
+            gp.participant_id,
+            gp.seat_position,
+            gp.player_id,
+            gp.deck_id,
+            gp.mulligan_count,
+            gp.is_winner,
+            p.display_name AS player_name,
+            d.deck_name,
+            d.owner_id AS deck_owner_id
+        FROM game_participants gp
+        JOIN players p ON gp.player_id = p.player_id
+        JOIN decks d ON gp.deck_id = d.deck_id
+        WHERE gp.game_id = %s
+        ORDER BY gp.seat_position ASC;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query, (game_id,))
+        return cur.fetchall()
+
+def update_game_session_details(game_id, total_turns, duration_minutes, win_condition, notes, bracket, medium):
+    """Updates high-level game session details."""
+    query = """
+        UPDATE game_sessions
+        SET total_turns = %s, duration_minutes = %s, win_condition = %s, notes = %s, bracket = %s, medium = %s
+        WHERE game_id = %s;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query, (total_turns, duration_minutes, win_condition, notes, bracket, medium, game_id))
+
+def update_game_participant(participant_id, player_id, deck_id, mulligan_count, is_winner):
+    """Updates an individual participant seat record."""
+    query = """
+        UPDATE game_participants
+        SET player_id = %s, deck_id = %s, mulligan_count = %s, is_winner = %s
+        WHERE participant_id = %s;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query, (player_id, deck_id, mulligan_count, is_winner, participant_id))
