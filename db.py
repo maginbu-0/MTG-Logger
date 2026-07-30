@@ -418,3 +418,24 @@ def update_live_session(session_key, running, start_time, elapsed, turns):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(query, (session_key, running, start_time, elapsed, turns))
+
+def update_deck_details(deck_id, new_deck_name, new_owner_id, bracket=None):
+    """Updates deck name, owner, and optional bracket rating."""
+    query = """
+        UPDATE decks
+        SET deck_name = %s, owner_id = %s
+        WHERE deck_id = %s;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query, (new_deck_name, new_owner_id, deck_id))
+
+def delete_deck(deck_id):
+    """Permanently deletes a deck and its commander associations."""
+    with get_db() as conn:
+        cur = conn.cursor()
+        # Clean up commander links first if using a bridge table
+        cur.execute("DELETE FROM deck_commanders WHERE deck_id = %s;", (deck_id,))
+        # Delete participant references or nullify if necessary, then delete deck
+        cur.execute("DELETE FROM game_participants WHERE deck_id = %s;", (deck_id,))
+        cur.execute("DELETE FROM decks WHERE deck_id = %s;", (deck_id,))
