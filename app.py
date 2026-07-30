@@ -924,7 +924,7 @@ if tab_recap:
             m1.metric("Matches Logged", ov['total_games'])
             m2.metric("Total Playtime", f"{int(ov['total_playtime'])} mins")
             m3.metric("Avg Turn Count", f"Turn {ov['avg_turns']}")
-            m4.metric("Session MVP 🏆", f"{mvp_player} ({mvp_wins} W)")
+            m4.metric("Session MVP 🏆", f"{mvp_player}")
             
             st.divider()
             
