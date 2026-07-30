@@ -418,3 +418,20 @@ def update_live_session(session_key, running, start_time, elapsed, turns):
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(query, (session_key, running, start_time, elapsed, turns))
+
+
+def fetch_all_active_decks():
+    """Fetches all registered active decks with their owner names for borrowed deck selection."""
+    query = """
+        SELECT 
+            d.deck_id, 
+            d.deck_name, 
+            p.display_name AS owner_name
+        FROM decks d
+        JOIN players p ON d.owner_id = p.player_id
+        ORDER BY p.display_name ASC, d.deck_name ASC;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        return cur.fetchall()

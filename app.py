@@ -189,6 +189,9 @@ if tab_log:
             player_dict = {p['display_name']: p['player_id'] for p in players}
             player_names = list(player_dict.keys())
 
+            # Fetch global decks for borrowed deck picker
+            all_global_decks = db.fetch_all_active_decks() if hasattr(db, 'fetch_all_active_decks') else []
+
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 total_turns = st.number_input(
@@ -254,26 +257,48 @@ if tab_log:
                         key=f"seat_player_{seat}_{form_v}"
                     )
                     
+                    is_borrowing = st.checkbox("🎁 Borrowing a deck from someone else?", key=f"seat_borrow_{seat}_{form_v}")
+                    
                     selected_player_id = None
                     selected_deck_id = None
                     
                     if selected_player_name:
                         selected_player_id = player_dict[selected_player_name]
-                        available_decks = db.fetch_player_decks(selected_player_id)
                         
-                        if available_decks:
-                            deck_dict = {d['deck_name']: d['deck_id'] for d in available_decks}
-                            selected_deck_name = st.selectbox(
-                                "Deck", 
-                                list(deck_dict.keys()),
-                                index=None,
-                                placeholder="Select deck...",
-                                key=f"seat_deck_{seat}_{form_v}"
-                            )
-                            if selected_deck_name:
-                                selected_deck_id = deck_dict[selected_deck_name]
+                        if is_borrowing:
+                            # Show ALL decks across the playgroup with owner labels
+                            if all_global_decks:
+                                global_deck_dict = {
+                                    f"{d['deck_name']} (Owner: {d['owner_name']})": d['deck_id'] 
+                                    for d in all_global_decks
+                                }
+                                selected_deck_label = st.selectbox(
+                                    "Select Borrowed Deck", 
+                                    list(global_deck_dict.keys()),
+                                    index=None,
+                                    placeholder="Select borrowed deck...",
+                                    key=f"seat_deck_borrowed_{seat}_{form_v}"
+                                )
+                                if selected_deck_label:
+                                    selected_deck_id = global_deck_dict[selected_deck_label]
+                            else:
+                                st.caption("⚠️ No global decks found.")
                         else:
-                            st.caption("⚠️ No active decks found for this player.")
+                            # Show ONLY decks owned by the selected player
+                            available_decks = db.fetch_player_decks(selected_player_id)
+                            if available_decks:
+                                deck_dict = {d['deck_name']: d['deck_id'] for d in available_decks}
+                                selected_deck_name = st.selectbox(
+                                    "Deck", 
+                                    list(deck_dict.keys()),
+                                    index=None,
+                                    placeholder="Select deck...",
+                                    key=f"seat_deck_{seat}_{form_v}"
+                                )
+                                if selected_deck_name:
+                                    selected_deck_id = deck_dict[selected_deck_name]
+                            else:
+                                st.caption("⚠️ No active decks found for this player.")
                     else:
                         st.selectbox("Deck", [], disabled=True, index=None, placeholder="Waiting for player...", key=f"seat_deck_disabled_{seat}_{form_v}")
 
@@ -371,6 +396,9 @@ if tab_deck:
         else:
             player_dict = {p['display_name']: p['player_id'] for p in players}
             player_names = list(player_dict.keys())
+
+            # Fetch global decks for borrowed deck picker
+            all_global_decks = db.fetch_all_active_decks() if hasattr(db, 'fetch_all_active_decks') else []
 
             owner_name = st.selectbox("Who owns this deck?", player_names, index=None, placeholder="Select a player...")
             st.divider()
