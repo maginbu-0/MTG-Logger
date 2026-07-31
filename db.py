@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 from contextlib import contextmanager
 import streamlit as st
 import requests
+import json
+
 
 # 1. Load local .env file if running locally
 load_dotenv()
@@ -741,3 +743,34 @@ def update_full_game_match(game_id, total_turns, duration_minutes, win_condition
                 """, (p['deck_id'], p['mulligan_count'], p['is_winner'], game_id, p['player_id']))
 
     st.cache_data.clear()
+
+
+def fetch_live_pod_draft(session_key="Logger"):
+    """Fetches saved unsubmitted pod form setup from DB."""
+    query = "SELECT pod_draft_json FROM live_game_sessions WHERE session_key = %s;"
+    with get_db() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute(query, (session_key,))
+            row = cur.fetchone()
+            if row and row.get('pod_draft_json'):
+                return json.loads(row['pod_draft_json'])
+        except Exception:
+            conn.rollback()
+        return {}
+
+def update_live_pod_draft(session_key, pod_dict):
+    """Saves draft pod state to DB so refreshes won't lose selected players/decks."""
+    query = """
+        UPDATE live_game_sessions 
+        SET pod_draft_json = %s, updated_at = NOW() 
+        WHERE session_key = %s;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute(query, (json.dumps(pod_dict), session_key))
+        except Exception:
+            conn.rollback()
+            # If column doesn't exist yet, we catch gracefully
+            pass

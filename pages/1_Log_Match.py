@@ -6,14 +6,21 @@ st.subheader("⚔️ Live Match Companion & Logger")
 
 active_session_key = st.session_state.get("user_role", "Logger")
 
-# --- INITIALIZE PERSISTENT LIVE SESSION STATE ---
+# --- 1. INITIALIZE LIVE COMPANION & DRAFT POD STATE ---
 if "session_loaded_from_db" not in st.session_state:
     db_session = db.fetch_live_session(active_session_key)
     st.session_state.timer_running = db_session["timer_running"]
     st.session_state.timer_start_time = db_session["timer_start_time"]
     st.session_state.timer_elapsed_seconds = db_session["timer_elapsed_seconds"]
     st.session_state.live_turn_count = db_session["live_turn_count"]
+    
+    # Restore saved form choices from DB on initial app load / refresh
+    db_draft = db.fetch_live_pod_draft(active_session_key) if hasattr(db, 'fetch_live_pod_draft') else {}
+    st.session_state.saved_pod_state = db_draft
     st.session_state.session_loaded_from_db = True
+
+if "saved_pod_state" not in st.session_state:
+    st.session_state.saved_pod_state = {}
 
 def sync_companion_to_db():
     db.update_live_session(
@@ -24,17 +31,18 @@ def sync_companion_to_db():
         st.session_state.live_turn_count
     )
 
+def sync_draft_pod():
+    if hasattr(db, 'update_live_pod_draft'):
+        db.update_live_pod_draft(active_session_key, st.session_state.saved_pod_state)
+
 if "input_total_turns" not in st.session_state:
     st.session_state["input_total_turns"] = 8
 if "input_duration" not in st.session_state:
     st.session_state["input_duration"] = 45
 
-# --- PERSISTENT SEAT INPUT DICTIONARY ---
-if "saved_pod_state" not in st.session_state:
-    st.session_state.saved_pod_state = {}
-
 def clear_form_selections():
     st.session_state.saved_pod_state = {}
+    sync_draft_pod()
     keys_to_clear = ["input_win_condition", "input_match_notes", "input_num_players"]
     for seat in range(1, 5):
         keys_to_clear.extend([
@@ -49,7 +57,7 @@ def clear_form_selections():
         if k in st.session_state:
             del st.session_state[k]
 
-# --- STREAMLIT FRAGMENT: LIVE GAME COMPANION ---
+# --- LIVE GAME COMPANION FRAGMENT ---
 @st.fragment(run_every=1)
 def render_live_companion_fragment():
     current_elapsed = st.session_state.get("timer_elapsed_seconds", 0)
@@ -192,11 +200,13 @@ else:
     participants_input = []
 
     for seat in range(1, num_players + 1):
-        with st.expander(f"👤 Seat {seat}", expanded=(seat == 1)):
-            # 1. Restore Player selection from saved_pod_state
-            saved_p = st.session_state.saved_pod_state.get(f"p_{seat}", None)
-            p_idx = player_names.index(saved_p) if saved_p in player_names else None
+        saved_p = st.session_state.saved_pod_state.get(f"p_{seat}", None)
+        p_idx = player_names.index(saved_p) if saved_p in player_names else None
 
+        # KEEP EXPANDED IF PLAYER SELECTED OR IT IS SEAT 1
+        should_expand = bool(saved_p or seat == 1)
+
+        with st.expander(f"👤 Seat {seat}" + (f": {saved_p}" if saved_p else ""), expanded=should_expand):
             selected_player_name = st.selectbox(
                 "Player", 
                 player_names, 
@@ -205,18 +215,19 @@ else:
                 key=f"seat_player_{seat}"
             )
             
-            # Save selection to custom dictionary
-            if selected_player_name:
+            if selected_player_name != saved_p:
                 st.session_state.saved_pod_state[f"p_{seat}"] = selected_player_name
+                sync_draft_pod()
 
-            # 2. Restore Borrowing Checkbox
             saved_borrow = st.session_state.saved_pod_state.get(f"borrow_{seat}", False)
             is_borrowing = st.checkbox(
                 "🎁 Borrowing a deck from someone else?", 
                 value=saved_borrow,
                 key=f"seat_borrow_{seat}"
             )
-            st.session_state.saved_pod_state[f"borrow_{seat}"] = is_borrowing
+            if is_borrowing != saved_borrow:
+                st.session_state.saved_pod_state[f"borrow_{seat}"] = is_borrowing
+                sync_draft_pod()
             
             selected_player_id = None
             selected_deck_id = None
@@ -239,7 +250,9 @@ else:
                         )
                         if selected_deck_label:
                             selected_deck_id = global_deck_dict[selected_deck_label]
-                            st.session_state.saved_pod_state[f"deck_b_{seat}"] = selected_deck_label
+                            if selected_deck_label != saved_bd:
+                                st.session_state.saved_pod_state[f"deck_b_{seat}"] = selected_deck_label
+                                sync_draft_pod()
                     else:
                         st.caption("⚠️ No global decks found.")
                 else:
@@ -259,7 +272,9 @@ else:
                         )
                         if selected_deck_name:
                             selected_deck_id = deck_dict[selected_deck_name]
-                            st.session_state.saved_pod_state[f"deck_o_{seat}"] = selected_deck_name
+                            if selected_deck_name != saved_od:
+                                st.session_state.saved_pod_state[f"deck_o_{seat}"] = selected_deck_name
+                                sync_draft_pod()
                     else:
                         st.caption("⚠️ No active decks found for this player.")
             else:
@@ -269,11 +284,15 @@ else:
             with col_mull:
                 saved_mull = st.session_state.saved_pod_state.get(f"mull_{seat}", 0)
                 mulligans = st.number_input("Mulligans", 0, 7, value=saved_mull, key=f"seat_mull_{seat}")
-                st.session_state.saved_pod_state[f"mull_{seat}"] = mulligans
+                if mulligans != saved_mull:
+                    st.session_state.saved_pod_state[f"mull_{seat}"] = mulligans
+                    sync_draft_pod()
             with col_win:
                 saved_win = st.session_state.saved_pod_state.get(f"win_{seat}", False)
                 is_winner = st.checkbox("Winner 🏆", value=saved_win, key=f"seat_win_{seat}")
-                st.session_state.saved_pod_state[f"win_{seat}"] = is_winner
+                if is_winner != saved_win:
+                    st.session_state.saved_pod_state[f"win_{seat}"] = is_winner
+                    sync_draft_pod()
 
             participants_input.append({
                 "seat_position": seat,
@@ -326,7 +345,6 @@ else:
                 st.toast("Game logged & form cleared!", icon="🧹")
 
             elif rematch_submit:
-                # Reset only win condition, notes, mulligans, and winner checkmarks for rematch
                 keys_to_reset = ["input_win_condition", "input_match_notes"]
                 for seat in range(1, num_players + 1):
                     keys_to_reset.extend([f"seat_mull_{seat}", f"seat_win_{seat}"])
@@ -335,6 +353,7 @@ else:
                 for k in keys_to_reset:
                     if k in st.session_state:
                         del st.session_state[k]
+                sync_draft_pod()
 
                 st.toast("Game logged! Ready for Rematch with same pod & decks!", icon="🔁")
 
