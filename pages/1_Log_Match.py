@@ -6,6 +6,7 @@ st.subheader("⚔️ Live Match Companion & Logger")
 
 active_session_key = st.session_state.get("user_role", "Logger")
 
+# --- INITIALIZE PERSISTENT LIVE SESSION STATE ---
 if "session_loaded_from_db" not in st.session_state:
     db_session = db.fetch_live_session(active_session_key)
     st.session_state.timer_running = db_session["timer_running"]
@@ -27,8 +28,22 @@ if "input_total_turns" not in st.session_state:
     st.session_state["input_total_turns"] = 8
 if "input_duration" not in st.session_state:
     st.session_state["input_duration"] = 45
-if "form_version" not in st.session_state:
-    st.session_state.form_version = 0
+
+# Function to clear all seat form selections manually
+def clear_form_selections():
+    keys_to_clear = ["input_win_condition", "input_match_notes", "input_num_players"]
+    for seat in range(1, 5):
+        keys_to_clear.extend([
+            f"seat_player_{seat}",
+            f"seat_borrow_{seat}",
+            f"seat_deck_borrowed_{seat}",
+            f"seat_deck_owned_{seat}",
+            f"seat_mull_{seat}",
+            f"seat_win_{seat}"
+        ])
+    for k in keys_to_clear:
+        if k in st.session_state:
+            del st.session_state[k]
 
 # --- STREAMLIT FRAGMENT: LIVE GAME COMPANION ---
 @st.fragment(run_every=1)
@@ -107,7 +122,6 @@ def render_live_companion_fragment():
             
             st.session_state["input_total_turns"] = int(st.session_state.live_turn_count)
             st.session_state["input_duration"] = int(final_minutes)
-            st.session_state.form_version += 1
             
             sync_companion_to_db()
             st.toast(f"Pushed {final_minutes} mins and Turn {st.session_state.live_turn_count} to form!", icon="⏱️")
@@ -116,9 +130,15 @@ def render_live_companion_fragment():
 render_live_companion_fragment()
 
 # MATCH DETAILS FORM
-st.subheader("Match Details")
+col_header1, col_header2 = st.columns([3, 1])
+with col_header1:
+    st.subheader("Match Details")
+with col_header2:
+    if st.button("🧹 Clear Form Inputs", use_container_width=True):
+        clear_form_selections()
+        st.toast("Form cleared!", icon="🧹")
+        st.rerun()
 
-form_v = st.session_state.form_version
 players = db.fetch_players()
 
 if not players:
@@ -135,7 +155,7 @@ else:
             min_value=1, 
             max_value=50, 
             value=int(st.session_state.get("input_total_turns", 8)), 
-            key=f"input_total_turns_{form_v}"
+            key="input_total_turns"
         )
     with col2:
         duration = st.number_input(
@@ -143,34 +163,41 @@ else:
             min_value=1, 
             max_value=500, 
             value=int(st.session_state.get("input_duration", 45)), 
-            key=f"input_duration_{form_v}"
+            key="input_duration"
         )
     with col3:
-        bracket_level = st.selectbox("Game Bracket", options=[1, 2, 3, 4, 5], index=2, key=f"input_bracket_{form_v}")
+        bracket_level = st.selectbox("Game Bracket", options=[1, 2, 3, 4, 5], index=2, key="input_bracket")
     with col4:
-        game_medium = st.selectbox("Platform / Medium", options=["In Person 🃏", "Convoke 💻", "SpellTable 📹"], index=0, key=f"input_medium_{form_v}")
+        game_medium = st.selectbox("Platform / Medium", options=["In Person 🃏", "Convoke 💻", "SpellTable 📹"], index=0, key="input_medium")
 
     win_condition = st.selectbox(
         "Win Condition",
         ["Combat Damage", "Infinite Combo", "Alternate Win-Con", "Commander Damage", "Scoop / Surrender"],
         index=None,
         placeholder="How did it end?",
-        key=f"input_win_condition_{form_v}"
+        key="input_win_condition"
     )
 
     st.divider()
     
     col_p1, col_p2 = st.columns([1, 2])
     with col_p1:
-        num_players = st.selectbox("Number of Players", options=[3, 4], index=1, key=f"input_num_players_{form_v}")
+        num_players = st.selectbox("Number of Players", options=[3, 4], index=1, key="input_num_players")
 
     st.subheader("Participants")
     participants_input = []
 
     for seat in range(1, num_players + 1):
         with st.expander(f"👤 Seat {seat}", expanded=(seat == 1)):
-            selected_player_name = st.selectbox("Player", player_names, index=None, placeholder="Select player...", key=f"seat_player_{seat}_{form_v}")
-            is_borrowing = st.checkbox("🎁 Borrowing a deck from someone else?", key=f"seat_borrow_{seat}_{form_v}")
+            # Persistent key binds for Player and Borrowed Checkbox
+            selected_player_name = st.selectbox(
+                "Player", 
+                player_names, 
+                index=None, 
+                placeholder="Select player...", 
+                key=f"seat_player_{seat}"
+            )
+            is_borrowing = st.checkbox("🎁 Borrowing a deck from someone else?", key=f"seat_borrow_{seat}")
             
             selected_player_id = None
             selected_deck_id = None
@@ -180,7 +207,13 @@ else:
                 if is_borrowing:
                     if all_global_decks:
                         global_deck_dict = {f"{d['deck_name']} (Owner: {d['owner_name']})": d['deck_id'] for d in all_global_decks}
-                        selected_deck_label = st.selectbox("Select Borrowed Deck", list(global_deck_dict.keys()), index=None, placeholder="Select borrowed deck...", key=f"seat_deck_borrowed_{seat}_{form_v}")
+                        selected_deck_label = st.selectbox(
+                            "Select Borrowed Deck", 
+                            list(global_deck_dict.keys()), 
+                            index=None, 
+                            placeholder="Select borrowed deck...", 
+                            key=f"seat_deck_borrowed_{seat}"
+                        )
                         if selected_deck_label:
                             selected_deck_id = global_deck_dict[selected_deck_label]
                     else:
@@ -189,19 +222,25 @@ else:
                     available_decks = db.fetch_player_decks(selected_player_id)
                     if available_decks:
                         deck_dict = {f"{d['deck_name']} (⚡ Bracket {d.get('bracket', 3)})": d['deck_id'] for d in available_decks}
-                        selected_deck_name = st.selectbox("Deck", list(deck_dict.keys()), index=None, placeholder="Select deck...", key=f"seat_deck_{seat}_{form_v}")
+                        selected_deck_name = st.selectbox(
+                            "Deck", 
+                            list(deck_dict.keys()), 
+                            index=None, 
+                            placeholder="Select deck...", 
+                            key=f"seat_deck_owned_{seat}"
+                        )
                         if selected_deck_name:
                             selected_deck_id = deck_dict[selected_deck_name]
                     else:
                         st.caption("⚠️ No active decks found for this player.")
             else:
-                st.selectbox("Deck", [], disabled=True, index=None, placeholder="Waiting for player...", key=f"seat_deck_disabled_{seat}_{form_v}")
+                st.selectbox("Deck", [], disabled=True, index=None, placeholder="Waiting for player...", key=f"seat_deck_disabled_{seat}")
 
             col_mull, col_win = st.columns(2)
             with col_mull:
-                mulligans = st.number_input("Mulligans", 0, 7, 0, key=f"seat_mull_{seat}_{form_v}")
+                mulligans = st.number_input("Mulligans", 0, 7, 0, key=f"seat_mull_{seat}")
             with col_win:
-                is_winner = st.checkbox("Winner 🏆", key=f"seat_win_{seat}_{form_v}")
+                is_winner = st.checkbox("Winner 🏆", key=f"seat_win_{seat}")
 
             participants_input.append({
                 "seat_position": seat,
@@ -211,13 +250,13 @@ else:
                 "is_winner": is_winner
             })
 
-    notes = st.text_input("Match Notes (Optional)", placeholder="e.g. Turn 6 Rhystic Study went unanswered", key=f"input_match_notes_{form_v}")
+    notes = st.text_input("Match Notes (Optional)", placeholder="e.g. Turn 6 Rhystic Study went unanswered", key="input_match_notes")
     
     col_save1, col_save2 = st.columns(2)
     with col_save1:
-        submit_match = st.button("💾 Save Game Log (Clear Form)", use_container_width=True, type="primary", key=f"btn_save_clear_{form_v}")
+        submit_match = st.button("💾 Save Game Log (Clear Form)", use_container_width=True, type="primary", key="btn_save_clear")
     with col_save2:
-        rematch_submit = st.button("🔁 Save & Rematch (Keep Pod/Decks)", use_container_width=True, type="secondary", key=f"btn_save_rematch_{form_v}")
+        rematch_submit = st.button("🔁 Save & Rematch (Keep Pod/Decks)", use_container_width=True, type="secondary", key="btn_save_rematch")
 
     if submit_match or rematch_submit:
         missing_players = any(p['player_id'] is None for p in participants_input)
@@ -250,13 +289,14 @@ else:
             db.update_live_session(active_session_key, False, None, 0, 1)
 
             if submit_match:
-                st.session_state.form_version += 1
+                clear_form_selections()
                 st.toast("Game logged & form cleared!", icon="🧹")
 
             elif rematch_submit:
-                keys_to_reset = [f"input_win_condition_{form_v}", f"input_match_notes_{form_v}"]
+                # Reset only win condition, notes, mulligans, and winner checkmarks for rematch
+                keys_to_reset = ["input_win_condition", "input_match_notes"]
                 for seat in range(1, num_players + 1):
-                    keys_to_reset.extend([f"seat_mull_{seat}_{form_v}", f"seat_win_{seat}_{form_v}"])
+                    keys_to_reset.extend([f"seat_mull_{seat}", f"seat_win_{seat}"])
                 for k in keys_to_reset:
                     if k in st.session_state:
                         del st.session_state[k]
