@@ -8,8 +8,33 @@ active_session_key = st.session_state.get("user_role", "Logger")
 
 POD_KEYS_PREFIXES = ("seat_player_", "seat_borrow_", "seat_deck_borrowed_", "seat_deck_owned_", "seat_mull_", "seat_win_", "input_")
 
+# --- 1. DB HYDRATION (RUNS ONLY ON INITIAL MOUNT / REFRESH) ---
+if "form_hydrated_from_db" not in st.session_state:
+    db_session = db.fetch_live_session(active_session_key)
+    st.session_state.timer_running = db_session["timer_running"]
+    st.session_state.timer_start_time = db_session["timer_start_time"]
+    st.session_state.timer_elapsed_seconds = db_session["timer_elapsed_seconds"]
+    st.session_state.live_turn_count = db_session["live_turn_count"]
+
+    # Fetch draft from DB strictly ONCE
+    db_draft = db.fetch_live_pod_draft(active_session_key) if hasattr(db, 'fetch_live_pod_draft') else {}
+    if not isinstance(db_draft, dict):
+        db_draft = {}
+
+    st.session_state.saved_pod_state = db_draft
+
+    # Pre-populate active keys into session_state
+    for k, v in db_draft.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+    st.session_state.form_hydrated_from_db = True
+
+if "saved_pod_state" not in st.session_state:
+    st.session_state.saved_pod_state = {}
+
 def sync_field_change():
-    """Package active form keys and push directly to DB draft."""
+    """Immediately updates local session_state and asynchronously syncs to DB."""
     current_draft = {}
     for k, v in st.session_state.items():
         if any(k.startswith(prefix) for prefix in POD_KEYS_PREFIXES):
@@ -19,26 +44,6 @@ def sync_field_change():
     st.session_state.saved_pod_state = current_draft
     if hasattr(db, 'update_live_pod_draft'):
         db.update_live_pod_draft(active_session_key, current_draft)
-
-# --- 1. DB HYDRATION & PERSISTENCE ---
-db_session = db.fetch_live_session(active_session_key)
-if "timer_running" not in st.session_state:
-    st.session_state.timer_running = db_session["timer_running"]
-    st.session_state.timer_start_time = db_session["timer_start_time"]
-    st.session_state.timer_elapsed_seconds = db_session["timer_elapsed_seconds"]
-    st.session_state.live_turn_count = db_session["live_turn_count"]
-
-# Fetch draft from DB
-db_draft = db.fetch_live_pod_draft(active_session_key) if hasattr(db, 'fetch_live_pod_draft') else {}
-if not isinstance(db_draft, dict):
-    db_draft = {}
-
-# Hydrate stored DB draft values into session state if not already set
-for k, v in db_draft.items():
-    if k not in st.session_state:
-        st.session_state[k] = v
-
-st.session_state.saved_pod_state = db_draft
 
 def sync_companion_to_db():
     db.update_live_session(
@@ -50,10 +55,9 @@ def sync_companion_to_db():
     )
 
 def clear_form_selections():
-    """Thoroughly purges session state & updates Supabase to empty JSON."""
+    """Wipes state locally & updates Supabase to empty dict."""
     st.session_state.saved_pod_state = {}
     
-    # Update DB first so re-runs don't pull old state back
     if hasattr(db, 'update_live_pod_draft'):
         db.update_live_pod_draft(active_session_key, {})
         
@@ -143,8 +147,6 @@ def render_live_companion_fragment():
             
             st.session_state["input_total_turns"] = int(st.session_state.live_turn_count)
             st.session_state["input_duration"] = int(final_minutes)
-            
-            # Save turns & duration into draft state & DB as well
             st.session_state.saved_pod_state["input_total_turns"] = int(st.session_state.live_turn_count)
             st.session_state.saved_pod_state["input_duration"] = int(final_minutes)
             
