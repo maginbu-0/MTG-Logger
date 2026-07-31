@@ -96,31 +96,12 @@ if tab_log:
 
         import time
 
-# Ensure session state defaults exist
         if "input_total_turns" not in st.session_state:
             st.session_state["input_total_turns"] = 8
         if "input_duration" not in st.session_state:
             st.session_state["input_duration"] = 45
-
-        # Callback function triggered reliably on Mobile & Desktop touch/click
-        def end_match_callback():
-            current_elapsed = st.session_state.get("timer_elapsed_seconds", 0)
-            if st.session_state.get("timer_running", False) and st.session_state.get("timer_start_time") is not None:
-                current_elapsed += int(time.time() - st.session_state.timer_start_time)
-
-            final_minutes = max(1, round(current_elapsed / 60))
-            
-            # Freeze and reset active timer states
-            st.session_state.timer_running = False
-            st.session_state.timer_elapsed_seconds = current_elapsed
-            st.session_state.timer_start_time = None
-            
-            # Explicitly push values to form inputs
-            st.session_state["input_total_turns"] = int(st.session_state.get("live_turn_count", 1))
-            st.session_state["input_duration"] = int(final_minutes)
-            
-            # Sync to database
-            sync_companion_to_db()
+        if "form_version" not in st.session_state:
+            st.session_state.form_version = 0
 
         # --- STREAMLIT FRAGMENT: LIVE GAME COMPANION ---
         @st.fragment(run_every=1)
@@ -129,7 +110,6 @@ if tab_log:
             if st.session_state.get("timer_running", False) and st.session_state.get("timer_start_time") is not None:
                 current_elapsed += int(time.time() - st.session_state.timer_start_time)
 
-            # Throttled Background DB Sync: Flush to DB every 15s automatically
             last_sync = st.session_state.get("last_db_sync_time", 0)
             if st.session_state.get("timer_running", False) and (time.time() - last_sync > 15):
                 st.session_state.last_db_sync_time = time.time()
@@ -190,22 +170,27 @@ if tab_log:
 
                 st.divider()
                 
-                # Using on_click callback guarantees mobile browsers register the tap instantly
-                st.button(
-                    "🏁 End Match & Auto-Fill Form", 
-                    type="primary", 
-                    use_container_width=True, 
-                    key="btn_end_match",
-                    on_click=end_match_callback
-                )
+                if st.button("🏁 End Match & Auto-Fill Form", type="primary", use_container_width=True, key="btn_end_match"):
+                    if st.session_state.get("timer_running", False) and st.session_state.get("timer_start_time") is not None:
+                        st.session_state.timer_elapsed_seconds += int(time.time() - st.session_state.timer_start_time)
+                        st.session_state.timer_running = False
+                        st.session_state.timer_start_time = None
+                    
+                    final_minutes = max(1, round(st.session_state.timer_elapsed_seconds / 60))
+                    
+                    # Update value variables & increment version to force widget refresh
+                    st.session_state["input_total_turns"] = int(st.session_state.live_turn_count)
+                    st.session_state["input_duration"] = int(final_minutes)
+                    st.session_state.form_version += 1
+                    
+                    sync_companion_to_db()
+                    st.toast(f"Pushed {final_minutes} mins and Turn {st.session_state.live_turn_count} to form!", icon="⏱️")
+                    st.rerun()
 
         render_live_companion_fragment()
 
         # MATCH DETAILS FORM
         st.subheader("Match Details")
-
-        if "form_version" not in st.session_state:
-            st.session_state.form_version = 0
 
         form_v = st.session_state.form_version
         players = db.fetch_players()
@@ -224,7 +209,7 @@ if tab_log:
                     min_value=1, 
                     max_value=50, 
                     value=int(st.session_state.get("input_total_turns", 8)), 
-                    key="input_total_turns"
+                    key=f"input_total_turns_{form_v}"
                 )
             with col2:
                 duration = st.number_input(
@@ -232,12 +217,12 @@ if tab_log:
                     min_value=1, 
                     max_value=500, 
                     value=int(st.session_state.get("input_duration", 45)), 
-                    key="input_duration"
+                    key=f"input_duration_{form_v}"
                 )
             with col3:
-                bracket_level = st.selectbox("Game Bracket", options=[1, 2, 3, 4, 5], index=2, key="input_bracket")
+                bracket_level = st.selectbox("Game Bracket", options=[1, 2, 3, 4, 5], index=2, key=f"input_bracket_{form_v}")
             with col4:
-                game_medium = st.selectbox("Platform / Medium", options=["In Person 🃏", "Convoke 💻", "SpellTable 📹"], index=0, key="input_medium")
+                game_medium = st.selectbox("Platform / Medium", options=["In Person 🃏", "Convoke 💻", "SpellTable 📹"], index=0, key=f"input_medium_{form_v}")
 
             win_condition = st.selectbox(
                 "Win Condition",
