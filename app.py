@@ -96,20 +96,18 @@ if tab_log:
 
         import time
 
-        refresh_rate = 1 if st.session_state.get("timer_running", False) else None
-
-        # --- STREAMLIT FRAGMENT: LIVE GAME COMPANION (ISOLATED POLLING) ---
-        refresh_rate = 1 if st.session_state.get("timer_running", False) else None
-
-        @st.fragment(run_every=refresh_rate)
+        # --- STREAMLIT FRAGMENT: LIVE GAME COMPANION ---
+        # Hardcode run_every=1 so Streamlit constantly maintains a 1-second heartbeat
+        @st.fragment(run_every=1)
         def render_live_companion_fragment():
-            current_elapsed = st.session_state.timer_elapsed_seconds
-            if st.session_state.timer_running and st.session_state.timer_start_time is not None:
+            # Calculate current live elapsed time
+            current_elapsed = st.session_state.get("timer_elapsed_seconds", 0)
+            if st.session_state.get("timer_running", False) and st.session_state.get("timer_start_time") is not None:
                 current_elapsed += int(time.time() - st.session_state.timer_start_time)
 
-            # Throttled Background DB Sync: Update DB every 15 seconds automatically without forcing UI reruns
+            # Throttled Background Sync: Flush to DB every 15s automatically
             last_sync = st.session_state.get("last_db_sync_time", 0)
-            if st.session_state.timer_running and (time.time() - last_sync > 15):
+            if st.session_state.get("timer_running", False) and (time.time() - last_sync > 15):
                 st.session_state.last_db_sync_time = time.time()
                 sync_companion_to_db()
 
@@ -125,20 +123,20 @@ if tab_log:
                     
                     t_col1, t_col2 = st.columns(2)
                     with t_col1:
-                        if not st.session_state.timer_running:
+                        if not st.session_state.get("timer_running", False):
                             if st.button("▶️ Start / Resume", use_container_width=True, key="btn_timer_start"):
                                 st.session_state.timer_running = True
                                 st.session_state.timer_start_time = time.time()
                                 st.session_state.last_db_sync_time = time.time()
                                 sync_companion_to_db()
-                                st.rerun(scope="fragment")
+                                st.rerun()  # Full rerun forces decorator re-evaluation
                         else:
                             if st.button("⏸️ Pause", use_container_width=True, key="btn_timer_pause"):
                                 st.session_state.timer_running = False
                                 st.session_state.timer_elapsed_seconds = current_elapsed
                                 st.session_state.timer_start_time = None
                                 sync_companion_to_db()
-                                st.rerun(scope="fragment")
+                                st.rerun()
                     
                     with t_col2:
                         if st.button("🔄 Reset Timer", use_container_width=True, key="btn_timer_reset"):
@@ -147,11 +145,11 @@ if tab_log:
                             st.session_state.timer_elapsed_seconds = 0
                             st.session_state.live_turn_count = 1
                             sync_companion_to_db()
-                            st.rerun(scope="fragment")
+                            st.rerun()
 
                 with col_turns:
                     st.markdown("#### 🔄 Turn Counter")
-                    st.markdown(f"<h2 style='text-align: center; margin: 0;'>Turn {st.session_state.live_turn_count}</h2>", unsafe_allow_html=True)
+                    st.markdown(f"<h2 style='text-align: center; margin: 0;'>Turn {st.session_state.get('live_turn_count', 1)}</h2>", unsafe_allow_html=True)
                     
                     turn_col1, turn_col2 = st.columns(2)
                     with turn_col1:
@@ -169,7 +167,7 @@ if tab_log:
                 st.divider()
                 
                 if st.button("🏁 End Match & Auto-Fill Form", type="primary", use_container_width=True, key="btn_end_match"):
-                    if st.session_state.timer_running and st.session_state.timer_start_time is not None:
+                    if st.session_state.get("timer_running", False) and st.session_state.get("timer_start_time") is not None:
                         st.session_state.timer_elapsed_seconds += int(time.time() - st.session_state.timer_start_time)
                         st.session_state.timer_running = False
                         st.session_state.timer_start_time = None
