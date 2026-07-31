@@ -4,19 +4,18 @@ from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 from contextlib import contextmanager
 import streamlit as st
+import requests
 
 # 1. Load local .env file if running locally
 load_dotenv()
 
 DATABASE_URL = None
 
-# 2. Safely attempt to read Streamlit Secrets without triggering an unhandled exception
 try:
     DATABASE_URL = st.secrets.get("DATABASE_URL")
 except Exception:
     DATABASE_URL = None
 
-# 3. Fallback to OS environment variable (.env) if st.secrets was empty or missing
 if not DATABASE_URL:
     DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -60,7 +59,6 @@ def fetch_commanders():
 
 @st.cache_data(ttl=300)
 def fetch_player_decks(player_id):
-    """Fetches all decks for a player including bracket level, formatting partner commanders as 'Comm A // Comm B'."""
     query = """
         SELECT 
             d.deck_id,
@@ -82,7 +80,6 @@ def fetch_player_decks(player_id):
 
 @st.cache_data(ttl=300)
 def fetch_all_decks_with_owners():
-    """Fetches all registered decks and their corresponding owners."""
     query = """
         SELECT 
             d.deck_id,
@@ -103,10 +100,8 @@ def fetch_all_decks_with_owners():
 
 @st.cache_data(ttl=300)
 def fetch_all_commanders():
-    """Fetches all unique registered commanders safely, checking available color columns."""
     with get_db() as conn:
         cur = conn.cursor()
-        
         try:
             cur.execute("SELECT commander_id, name, COALESCE(color_identity, 'C') AS colors FROM commanders ORDER BY name ASC;")
             return cur.fetchall()
@@ -130,7 +125,6 @@ def fetch_all_commanders():
 
 @st.cache_data(ttl=300)
 def fetch_recent_games(limit=25):
-    """Fetches a list of recent games with summary details for deletion/review."""
     query = """
         SELECT 
             g.game_id,
@@ -152,9 +146,7 @@ def fetch_recent_games(limit=25):
 
 @st.cache_data(ttl=300)
 def fetch_game_participants(game_id):
-    """Fetches seat participants for a game session."""
     query = "SELECT * FROM game_participants WHERE game_id = %s;"
-    
     with get_db() as conn:
         cur = conn.cursor()
         try:
@@ -174,9 +166,7 @@ def fetch_game_participants(game_id):
 
 @st.cache_data(ttl=300)
 def fetch_games_by_date(selected_date):
-    """Fetches games logged on a specific date in AST timezone directly from played_at."""
     date_str = str(selected_date)
-    
     query = """
         SELECT 
             g.game_id,
@@ -191,7 +181,6 @@ def fetch_games_by_date(selected_date):
         GROUP BY g.game_id, g.total_turns, g.win_condition, g.notes
         ORDER BY g.game_id DESC;
     """
-    
     query_fallback = """
         SELECT 
             g.game_id,
@@ -206,7 +195,6 @@ def fetch_games_by_date(selected_date):
         GROUP BY g.game_id, g.total_turns, g.win_condition, g.notes
         ORDER BY g.game_id DESC;
     """
-    
     with get_db() as conn:
         cur = conn.cursor()
         try:
@@ -219,12 +207,9 @@ def fetch_games_by_date(selected_date):
 
 @st.cache_data(ttl=300)
 def fetch_daily_session_summary(selected_date):
-    """Aggregates all games, player records, and top performers for a single date in local AST time."""
     date_str = str(selected_date)
-    
     with get_db() as conn:
         cur = conn.cursor()
-        
         query_overview = """
             SELECT 
                 COUNT(DISTINCT g.game_id) AS total_games,
@@ -526,7 +511,7 @@ def update_live_session(session_key, running, start_time, elapsed, turns):
         cur.execute(query, (session_key, running, start_time, elapsed, turns))
 
 # ------------------------------------------------------------------------------
-# WRITE OPERATIONS (MUTATIONS) WITH CACHE INVALIDATION
+# WRITE OPERATIONS & API HELPERS
 # ------------------------------------------------------------------------------
 
 def create_deck(player_id, deck_name, commander_ids, bracket=3):
@@ -613,6 +598,19 @@ def get_or_create_commander(name, color_identity="Unknown"):
             st.cache_data.clear()
             return comm_id
 
+def fetch_moxfield_deck(mox_url):
+    """Extracted Moxfield API fetch logic."""
+    deck_id = mox_url.strip().split('/')[-1]
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json, text/plain, */*",
+        "Referer": "https://www.moxfield.com/"
+    }
+    response = requests.get(f"https://api.moxfield.com/v2/decks/all/{deck_id}", headers=headers)
+    if response.status_code == 200:
+        return response.json()
+    raise Exception(f"Failed to fetch deck from Moxfield (Error {response.status_code})")
+
 def add_player(display_name):
     query = "INSERT INTO players (display_name) VALUES (%s) RETURNING player_id;"
     with get_db() as conn:
@@ -655,7 +653,6 @@ def update_deck_from_moxfield(deck_id, new_deck_name, commander_ids):
 def update_commander_colors(commander_id, clean_colors):
     with get_db() as conn:
         cur = conn.cursor()
-        
         try:
             cur.execute("UPDATE commanders SET color_identity = %s WHERE commander_id = %s;", (clean_colors, commander_id))
             st.cache_data.clear()
@@ -700,10 +697,8 @@ def delete_deck(deck_id):
 
 def update_full_game_match(game_id, total_turns, duration_minutes, win_condition, notes, bracket, medium, participants):
     params_games = (total_turns, duration_minutes, win_condition, notes, bracket, medium, game_id)
-    
     with get_db() as conn:
         cur = conn.cursor()
-        
         try:
             cur.execute("""
                 UPDATE games 
