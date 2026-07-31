@@ -6,7 +6,22 @@ st.subheader("⚔️ Live Match Companion & Logger")
 
 active_session_key = st.session_state.get("user_role", "Logger")
 
-# --- 1. INITIALIZE LIVE COMPANION & DRAFT POD STATE ---
+# Track keys used by the pod form
+POD_KEYS_PREFIXES = ("seat_player_", "seat_borrow_", "seat_deck_borrowed_", "seat_deck_owned_", "seat_mull_", "seat_win_", "input_")
+
+def sync_field_change():
+    """Immediately packages all active form keys and pushes directly to DB."""
+    current_draft = {}
+    for k, v in st.session_state.items():
+        if any(k.startswith(prefix) for prefix in POD_KEYS_PREFIXES):
+            if v is not None:
+                current_draft[k] = v
+                
+    st.session_state.saved_pod_state = current_draft
+    if hasattr(db, 'update_live_pod_draft'):
+        db.update_live_pod_draft(active_session_key, current_draft)
+
+# --- 1. INITIALIZE DB STATE & RESTORE POD DRAFT ---
 if "session_loaded_from_db" not in st.session_state:
     db_session = db.fetch_live_session(active_session_key)
     st.session_state.timer_running = db_session["timer_running"]
@@ -14,9 +29,15 @@ if "session_loaded_from_db" not in st.session_state:
     st.session_state.timer_elapsed_seconds = db_session["timer_elapsed_seconds"]
     st.session_state.live_turn_count = db_session["live_turn_count"]
     
-    # Restore saved form choices from DB on initial app load / refresh
+    # Restore saved pod draft from DB on initial mount / page refresh
     db_draft = db.fetch_live_pod_draft(active_session_key) if hasattr(db, 'fetch_live_pod_draft') else {}
     st.session_state.saved_pod_state = db_draft
+    
+    # Hydrate widget keys into session state
+    for k, v in db_draft.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+            
     st.session_state.session_loaded_from_db = True
 
 if "saved_pod_state" not in st.session_state:
@@ -31,18 +52,11 @@ def sync_companion_to_db():
         st.session_state.live_turn_count
     )
 
-def sync_draft_pod():
-    if hasattr(db, 'update_live_pod_draft'):
-        db.update_live_pod_draft(active_session_key, st.session_state.saved_pod_state)
-
-if "input_total_turns" not in st.session_state:
-    st.session_state["input_total_turns"] = 8
-if "input_duration" not in st.session_state:
-    st.session_state["input_duration"] = 45
-
 def clear_form_selections():
     st.session_state.saved_pod_state = {}
-    sync_draft_pod()
+    if hasattr(db, 'update_live_pod_draft'):
+        db.update_live_pod_draft(active_session_key, {})
+        
     keys_to_clear = ["input_win_condition", "input_match_notes", "input_num_players"]
     for seat in range(1, 5):
         keys_to_clear.extend([
@@ -56,6 +70,11 @@ def clear_form_selections():
     for k in keys_to_clear:
         if k in st.session_state:
             del st.session_state[k]
+
+if "input_total_turns" not in st.session_state:
+    st.session_state["input_total_turns"] = 8
+if "input_duration" not in st.session_state:
+    st.session_state["input_duration"] = 45
 
 # --- LIVE GAME COMPANION FRAGMENT ---
 @st.fragment(run_every=1)
@@ -178,56 +197,54 @@ else:
             key="input_duration"
         )
     with col3:
-        bracket_level = st.selectbox("Game Bracket", options=[1, 2, 3, 4, 5], index=2, key="input_bracket")
+        bracket_level = st.selectbox("Game Bracket", options=[1, 2, 3, 4, 5], index=2, key="input_bracket", on_change=sync_field_change)
     with col4:
-        game_medium = st.selectbox("Platform / Medium", options=["In Person 🃏", "Convoke 💻", "SpellTable 📹"], index=0, key="input_medium")
+        game_medium = st.selectbox("Platform / Medium", options=["In Person 🃏", "Convoke 💻", "SpellTable 📹"], index=0, key="input_medium", on_change=sync_field_change)
 
     win_condition = st.selectbox(
         "Win Condition",
         ["Combat Damage", "Infinite Combo", "Alternate Win-Con", "Commander Damage", "Scoop / Surrender"],
         index=None,
         placeholder="How did it end?",
-        key="input_win_condition"
+        key="input_win_condition",
+        on_change=sync_field_change
     )
 
     st.divider()
     
     col_p1, col_p2 = st.columns([1, 2])
     with col_p1:
-        num_players = st.selectbox("Number of Players", options=[3, 4], index=1, key="input_num_players")
+        num_players = st.selectbox("Number of Players", options=[3, 4], index=1, key="input_num_players", on_change=sync_field_change)
 
     st.subheader("Participants")
     participants_input = []
 
     for seat in range(1, num_players + 1):
-        saved_p = st.session_state.saved_pod_state.get(f"p_{seat}", None)
-        p_idx = player_names.index(saved_p) if saved_p in player_names else None
+        pk = f"seat_player_{seat}"
+        bk = f"seat_borrow_{seat}"
+        bdk = f"seat_deck_borrowed_{seat}"
+        odk = f"seat_deck_owned_{seat}"
+        mk = f"seat_mull_{seat}"
+        wk = f"seat_win_{seat}"
 
-        # KEEP EXPANDED IF PLAYER SELECTED OR IT IS SEAT 1
-        should_expand = bool(saved_p or seat == 1)
+        saved_p_val = st.session_state.get(pk, None)
+        header_text = f"👤 Seat {seat}" + (f": {saved_p_val}" if saved_p_val else "")
 
-        with st.expander(f"👤 Seat {seat}" + (f": {saved_p}" if saved_p else ""), expanded=should_expand):
+        with st.expander(header_text, expanded=True):
             selected_player_name = st.selectbox(
                 "Player", 
                 player_names, 
-                index=p_idx, 
+                index=None, 
                 placeholder="Select player...", 
-                key=f"seat_player_{seat}"
+                key=pk,
+                on_change=sync_field_change
             )
             
-            if selected_player_name != saved_p:
-                st.session_state.saved_pod_state[f"p_{seat}"] = selected_player_name
-                sync_draft_pod()
-
-            saved_borrow = st.session_state.saved_pod_state.get(f"borrow_{seat}", False)
             is_borrowing = st.checkbox(
                 "🎁 Borrowing a deck from someone else?", 
-                value=saved_borrow,
-                key=f"seat_borrow_{seat}"
+                key=bk,
+                on_change=sync_field_change
             )
-            if is_borrowing != saved_borrow:
-                st.session_state.saved_pod_state[f"borrow_{seat}"] = is_borrowing
-                sync_draft_pod()
             
             selected_player_id = None
             selected_deck_id = None
@@ -238,21 +255,17 @@ else:
                     if all_global_decks:
                         global_deck_dict = {f"{d['deck_name']} (Owner: {d['owner_name']})": d['deck_id'] for d in all_global_decks}
                         g_keys = list(global_deck_dict.keys())
-                        saved_bd = st.session_state.saved_pod_state.get(f"deck_b_{seat}", None)
-                        bd_idx = g_keys.index(saved_bd) if saved_bd in g_keys else None
 
                         selected_deck_label = st.selectbox(
                             "Select Borrowed Deck", 
                             g_keys, 
-                            index=bd_idx, 
+                            index=None, 
                             placeholder="Select borrowed deck...", 
-                            key=f"seat_deck_borrowed_{seat}"
+                            key=bdk,
+                            on_change=sync_field_change
                         )
                         if selected_deck_label:
                             selected_deck_id = global_deck_dict[selected_deck_label]
-                            if selected_deck_label != saved_bd:
-                                st.session_state.saved_pod_state[f"deck_b_{seat}"] = selected_deck_label
-                                sync_draft_pod()
                     else:
                         st.caption("⚠️ No global decks found.")
                 else:
@@ -260,21 +273,17 @@ else:
                     if available_decks:
                         deck_dict = {f"{d['deck_name']} (⚡ Bracket {d.get('bracket', 3)})": d['deck_id'] for d in available_decks}
                         d_keys = list(deck_dict.keys())
-                        saved_od = st.session_state.saved_pod_state.get(f"deck_o_{seat}", None)
-                        od_idx = d_keys.index(saved_od) if saved_od in d_keys else None
 
                         selected_deck_name = st.selectbox(
                             "Deck", 
                             d_keys, 
-                            index=od_idx, 
+                            index=None, 
                             placeholder="Select deck...", 
-                            key=f"seat_deck_owned_{seat}"
+                            key=odk,
+                            on_change=sync_field_change
                         )
                         if selected_deck_name:
                             selected_deck_id = deck_dict[selected_deck_name]
-                            if selected_deck_name != saved_od:
-                                st.session_state.saved_pod_state[f"deck_o_{seat}"] = selected_deck_name
-                                sync_draft_pod()
                     else:
                         st.caption("⚠️ No active decks found for this player.")
             else:
@@ -282,17 +291,9 @@ else:
 
             col_mull, col_win = st.columns(2)
             with col_mull:
-                saved_mull = st.session_state.saved_pod_state.get(f"mull_{seat}", 0)
-                mulligans = st.number_input("Mulligans", 0, 7, value=saved_mull, key=f"seat_mull_{seat}")
-                if mulligans != saved_mull:
-                    st.session_state.saved_pod_state[f"mull_{seat}"] = mulligans
-                    sync_draft_pod()
+                mulligans = st.number_input("Mulligans", 0, 7, key=mk, on_change=sync_field_change)
             with col_win:
-                saved_win = st.session_state.saved_pod_state.get(f"win_{seat}", False)
-                is_winner = st.checkbox("Winner 🏆", value=saved_win, key=f"seat_win_{seat}")
-                if is_winner != saved_win:
-                    st.session_state.saved_pod_state[f"win_{seat}"] = is_winner
-                    sync_draft_pod()
+                is_winner = st.checkbox("Winner 🏆", key=wk, on_change=sync_field_change)
 
             participants_input.append({
                 "seat_position": seat,
@@ -302,7 +303,7 @@ else:
                 "is_winner": is_winner
             })
 
-    notes = st.text_input("Match Notes (Optional)", placeholder="e.g. Turn 6 Rhystic Study went unanswered", key="input_match_notes")
+    notes = st.text_input("Match Notes (Optional)", placeholder="e.g. Turn 6 Rhystic Study went unanswered", key="input_match_notes", on_change=sync_field_change)
     
     col_save1, col_save2 = st.columns(2)
     with col_save1:
@@ -348,12 +349,14 @@ else:
                 keys_to_reset = ["input_win_condition", "input_match_notes"]
                 for seat in range(1, num_players + 1):
                     keys_to_reset.extend([f"seat_mull_{seat}", f"seat_win_{seat}"])
-                    st.session_state.saved_pod_state[f"mull_{seat}"] = 0
-                    st.session_state.saved_pod_state[f"win_{seat}"] = False
                 for k in keys_to_reset:
                     if k in st.session_state:
                         del st.session_state[k]
-                sync_draft_pod()
+                    if k in st.session_state.saved_pod_state:
+                        del st.session_state.saved_pod_state[k]
+                
+                if hasattr(db, 'update_live_pod_draft'):
+                    db.update_live_pod_draft(active_session_key, st.session_state.saved_pod_state)
 
                 st.toast("Game logged! Ready for Rematch with same pod & decks!", icon="🔁")
 
