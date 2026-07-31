@@ -96,16 +96,19 @@ if tab_log:
 
         import time
 
+# Ensure default session state values exist before rendering inputs
+        if "input_total_turns" not in st.session_state:
+            st.session_state["input_total_turns"] = 8
+        if "input_duration" not in st.session_state:
+            st.session_state["input_duration"] = 45
+
         # --- STREAMLIT FRAGMENT: LIVE GAME COMPANION ---
-        # Hardcode run_every=1 so Streamlit constantly maintains a 1-second heartbeat
         @st.fragment(run_every=1)
         def render_live_companion_fragment():
-            # Calculate current live elapsed time
             current_elapsed = st.session_state.get("timer_elapsed_seconds", 0)
             if st.session_state.get("timer_running", False) and st.session_state.get("timer_start_time") is not None:
                 current_elapsed += int(time.time() - st.session_state.timer_start_time)
 
-            # Throttled Background Sync: Flush to DB every 15s automatically
             last_sync = st.session_state.get("last_db_sync_time", 0)
             if st.session_state.get("timer_running", False) and (time.time() - last_sync > 15):
                 st.session_state.last_db_sync_time = time.time()
@@ -129,7 +132,7 @@ if tab_log:
                                 st.session_state.timer_start_time = time.time()
                                 st.session_state.last_db_sync_time = time.time()
                                 sync_companion_to_db()
-                                st.rerun()  # Full rerun forces decorator re-evaluation
+                                st.rerun()
                         else:
                             if st.button("⏸️ Pause", use_container_width=True, key="btn_timer_pause"):
                                 st.session_state.timer_running = False
@@ -173,22 +176,20 @@ if tab_log:
                         st.session_state.timer_start_time = None
                     
                     final_minutes = max(1, round(st.session_state.timer_elapsed_seconds / 60))
+                    
+                    # Force update the exact keys bound to the widgets
                     st.session_state["input_total_turns"] = int(st.session_state.live_turn_count)
                     st.session_state["input_duration"] = int(final_minutes)
                     
                     sync_companion_to_db()
                     st.toast(f"Pushed {final_minutes} mins and Turn {st.session_state.live_turn_count} to form!", icon="⏱️")
-                    st.rerun()
+                    st.rerun()  # Trigger full app rerun to re-render form inputs with new values
 
         render_live_companion_fragment()
 
         # MATCH DETAILS FORM
         st.subheader("Match Details")
 
-        if "input_total_turns" not in st.session_state:
-            st.session_state["input_total_turns"] = 8
-        if "input_duration" not in st.session_state:
-            st.session_state["input_duration"] = 45
         if "form_version" not in st.session_state:
             st.session_state.form_version = 0
 
@@ -204,9 +205,21 @@ if tab_log:
 
             col1, col2, col3, col4 = st.columns(4)
             with col1:
-                total_turns = st.number_input("Total Turns", min_value=1, max_value=50, key="input_total_turns")
+                total_turns = st.number_input(
+                    "Total Turns", 
+                    min_value=1, 
+                    max_value=50, 
+                    value=int(st.session_state.get("input_total_turns", 8)), 
+                    key="input_total_turns"
+                )
             with col2:
-                duration = st.number_input("Duration (mins)", min_value=1, max_value=500, key="input_duration")
+                duration = st.number_input(
+                    "Duration (mins)", 
+                    min_value=1, 
+                    max_value=500, 
+                    value=int(st.session_state.get("input_duration", 45)), 
+                    key="input_duration"
+                )
             with col3:
                 bracket_level = st.selectbox("Game Bracket", options=[1, 2, 3, 4, 5], index=2, key="input_bracket")
             with col4:
