@@ -438,16 +438,36 @@ def update_live_session(session_key, running, start_time, elapsed, turns):
         cur = conn.cursor()
         cur.execute(query, (session_key, running, start_time, elapsed, turns))
 
-def update_deck_details(deck_id, new_deck_name, new_player_id, bracket=3):
-    """Updates deck name, owner, and power bracket level."""
+def update_deck_details(deck_id, deck_name, owner_id=None, bracket=3, colors=None, commander_name=None):
+    """Updates deck details including owner, name, bracket, and color identity."""
+    
+    # Primary update query handling owner_id, bracket, and colors
     query = """
-        UPDATE decks
-        SET deck_name = %s, player_id = %s, bracket = %s
+        UPDATE decks 
+        SET deck_name = %s,
+            owner_id = COALESCE(%s, owner_id),
+            bracket = %s,
+            color_identity = COALESCE(%s, color_identity)
         WHERE deck_id = %s;
     """
+    
+    # Fallback query if column is named 'colors' in Supabase instead of 'color_identity'
+    query_fallback = """
+        UPDATE decks 
+        SET deck_name = %s,
+            owner_id = COALESCE(%s, owner_id),
+            bracket = %s,
+            colors = COALESCE(%s, colors)
+        WHERE deck_id = %s;
+    """
+    
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute(query, (new_deck_name, new_player_id, bracket, deck_id))
+        try:
+            cur.execute(query, (deck_name, owner_id, bracket, colors, deck_id))
+        except Exception:
+            conn.rollback()
+            cur.execute(query_fallback, (deck_name, owner_id, bracket, colors, deck_id))
 
 def delete_deck(deck_id):
     """Permanently deletes a deck and its commander associations."""

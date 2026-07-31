@@ -553,7 +553,7 @@ if tab_admin_decks:
                             st.error("Please select a player to remove.")
 
         # 2. EDIT / DELETE REGISTERED DECKS
-        with st.expander("✏️ Edit & Delete Registered Decks", expanded=False):
+        with st.expander("✏️ Edit & Delete Registered Decks", expanded=True):
             st.markdown("Select a player to view, modify, or remove their registered decks:")
             
             players = db.fetch_players()
@@ -602,6 +602,18 @@ if tab_admin_decks:
                                     key=f"input_deck_bracket_{selected_deck_id}"
                                 )
 
+                            # COLOR IDENTITY SELECTION
+                            color_options = ["W ⚪", "U 🔵", "B 💀", "R 🔥", "G 🌲", "C ⚙️"]
+                            raw_colors = str(deck_obj.get('color_identity', deck_obj.get('colors', '')) or '').upper()
+                            default_colors = [opt for opt in color_options if opt[0] in raw_colors]
+
+                            selected_colors = st.multiselect(
+                                "Color Identity", 
+                                color_options, 
+                                default=default_colors, 
+                                key=f"edit_dcols_{selected_deck_id}"
+                            )
+
                             col_btn_update, col_btn_del = st.columns(2)
 
                             with col_btn_update:
@@ -610,8 +622,16 @@ if tab_admin_decks:
                                         st.error("Deck name cannot be empty.")
                                     else:
                                         target_owner_id = player_dict[new_owner_name]
-                                        db.update_deck_details(selected_deck_id, new_name.strip(), target_owner_id, bracket=edit_deck_bracket)
-                                        st.toast(f"Updated '{new_name}'!", icon="✅")
+                                        clean_color_str = ", ".join([c.split()[0] for c in selected_colors])
+                                        
+                                        db.update_deck_details(
+                                            deck_id=selected_deck_id, 
+                                            deck_name=new_name.strip(), 
+                                            owner_id=target_owner_id, 
+                                            bracket=edit_deck_bracket,
+                                            colors=clean_color_str
+                                        )
+                                        st.toast(f"Updated '{new_name}' ({clean_color_str})!", icon="✅")
                                         st.success("Deck updated successfully!")
                                         st.rerun()
 
@@ -978,8 +998,6 @@ if tab_recap:
             
         else:
             st.info(f"No match sessions logged on {recap_date.strftime('%B %d, %Y')}.")
-
-
 
 # ------------------------------------------------------------------------------
 # TAB 6: ANALYTICS (PUBLIC / ALL ROLES)
