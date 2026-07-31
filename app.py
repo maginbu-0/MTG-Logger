@@ -623,7 +623,7 @@ if tab_admin_decks:
                                     else:
                                         target_owner_id = player_dict[new_owner_name]
                                         clean_color_str = ", ".join([c.split()[0] for c in selected_colors])
-                                        
+
                                         db.update_deck_details(
                                             deck_id=selected_deck_id, 
                                             deck_name=new_name.strip(), 
