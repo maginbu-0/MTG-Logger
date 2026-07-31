@@ -58,7 +58,6 @@ def clear_form_selections():
     if hasattr(db, 'update_live_pod_draft'):
         db.update_live_pod_draft(active_session_key, {})
         
-    # Reset widget keys explicitly to None/defaults instead of deleting
     st.session_state["input_win_condition"] = None
     st.session_state["input_match_notes"] = ""
     st.session_state["input_total_turns"] = 8
@@ -81,7 +80,7 @@ if "input_total_turns" not in st.session_state:
 if "input_duration" not in st.session_state:
     st.session_state["input_duration"] = 45
 
-# --- LIVE GAME COMPANION FRAGMENT ---
+# --- LIVE GAME COMPANION FRAGMENT (TIMER & TURNS ONLY) ---
 @st.fragment(run_every=1)
 def render_live_companion_fragment():
     current_elapsed = st.session_state.get("timer_elapsed_seconds", 0)
@@ -146,30 +145,33 @@ def render_live_companion_fragment():
                     sync_companion_to_db()
                     st.rerun(scope="fragment")
 
-        st.divider()
-        
-        if st.button("🏁 End Match & Auto-Fill Form", type="primary", use_container_width=True, key="btn_end_match"):
-            if st.session_state.get("timer_running", False) and st.session_state.get("timer_start_time") is not None:
-                st.session_state.timer_elapsed_seconds += int(time.time() - st.session_state.timer_start_time)
-                st.session_state.timer_running = False
-                st.session_state.timer_start_time = None
-            
-            final_minutes = max(1, round(st.session_state.timer_elapsed_seconds / 60))
-            final_turns = int(st.session_state.live_turn_count)
-            
-            st.session_state["input_total_turns"] = final_turns
-            st.session_state["input_duration"] = final_minutes
-            st.session_state.saved_pod_state["input_total_turns"] = final_turns
-            st.session_state.saved_pod_state["input_duration"] = final_minutes
-            
-            sync_companion_to_db()
-            if hasattr(db, 'update_live_pod_draft'):
-                db.update_live_pod_draft(active_session_key, st.session_state.saved_pod_state)
-
-            st.toast(f"Pushed {final_minutes} mins and Turn {final_turns} to form!", icon="⏱️")
-            st.rerun(scope="app")
-
 render_live_companion_fragment()
+
+# --- END MATCH BUTTON (OUTSIDE FRAGMENT FOR FULL FORM AUTO-FILL) ---
+if st.button("🏁 End Match & Auto-Fill Form", type="primary", use_container_width=True, key="btn_end_match"):
+    current_elapsed = st.session_state.get("timer_elapsed_seconds", 0)
+    if st.session_state.get("timer_running", False) and st.session_state.get("timer_start_time") is not None:
+        current_elapsed += int(time.time() - st.session_state.timer_start_time)
+        st.session_state.timer_elapsed_seconds = current_elapsed
+        st.session_state.timer_running = False
+        st.session_state.timer_start_time = None
+    
+    final_minutes = max(1, round(current_elapsed / 60))
+    final_turns = int(st.session_state.get("live_turn_count", 1))
+    
+    st.session_state["input_total_turns"] = final_turns
+    st.session_state["input_duration"] = final_minutes
+    st.session_state.saved_pod_state["input_total_turns"] = final_turns
+    st.session_state.saved_pod_state["input_duration"] = final_minutes
+    
+    sync_companion_to_db()
+    if hasattr(db, 'update_live_pod_draft'):
+        db.update_live_pod_draft(active_session_key, st.session_state.saved_pod_state)
+
+    st.toast(f"Pushed {final_minutes} mins and Turn {final_turns} to form!", icon="⏱️")
+    st.rerun()
+
+st.divider()
 
 # MATCH DETAILS FORM
 col_header1, col_header2 = st.columns([3, 1])
