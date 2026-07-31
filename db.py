@@ -438,58 +438,50 @@ def update_live_session(session_key, running, start_time, elapsed, turns):
         cur = conn.cursor()
         cur.execute(query, (session_key, running, start_time, elapsed, turns))
 
-def update_deck_details(deck_id, deck_name, owner_id=None, bracket=3, colors=None, *args, **kwargs):
+def fetch_all_commanders():
+    """Fetches all unique registered commanders for selection."""
+    query = """
+        SELECT commander_id, name, COALESCE(color_identity, colors, 'C') AS colors
+        FROM commanders
+        ORDER BY name ASC;
     """
-    Updates a deck's name, owner, and bracket on the decks table, 
-    and updates the color identity of its linked commander(s) on the commanders table.
-    """
-    # Fallback checks for kwargs
-    if not owner_id and 'target_owner_id' in kwargs:
-        owner_id = kwargs['target_owner_id']
-    if not colors and 'clean_color_str' in kwargs:
-        colors = kwargs['clean_color_str']
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        return cur.fetchall()
 
-    # 1. Update deck metadata
-    query_deck = """
+def update_commander_colors(commander_id, clean_colors):
+    """Updates the color identity of a specific commander entity directly."""
+    query = """
+        UPDATE commanders
+        SET color_identity = %s
+        WHERE commander_id = %s;
+    """
+    query_fallback = """
+        UPDATE commanders
+        SET colors = %s
+        WHERE commander_id = %s;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute(query, (clean_colors, commander_id))
+        except Exception:
+            conn.rollback()
+            cur.execute(query_fallback, (clean_colors, commander_id))
+
+def update_deck_details(deck_id, deck_name, owner_id=None, bracket=3, *args, **kwargs):
+    """Updates deck name, owner, and bracket on the decks table cleanly."""
+    query = """
         UPDATE decks 
         SET deck_name = %s,
             owner_id = COALESCE(%s, owner_id),
             bracket = %s
         WHERE deck_id = %s;
     """
-    
-    # 2. Update color identity on linked commanders
-    query_commander_colors = """
-        UPDATE commanders
-        SET color_identity = %s
-        WHERE commander_id IN (
-            SELECT commander_id FROM deck_commanders WHERE deck_id = %s
-        );
-    """
-    
-    # Fallback if commander column is named 'colors' instead of 'color_identity'
-    query_commander_colors_fallback = """
-        UPDATE commanders
-        SET colors = %s
-        WHERE commander_id IN (
-            SELECT commander_id FROM deck_commanders WHERE deck_id = %s
-        );
-    """
-
     with get_db() as conn:
         cur = conn.cursor()
-        # Update deck details
-        cur.execute(query_deck, (deck_name, owner_id, bracket, deck_id))
-        
-        # Update commander colors if provided
-        if colors:
-            try:
-                cur.execute(query_commander_colors, (colors, deck_id))
-            except Exception:
-                conn.rollback()
-                # Re-run deck update after rollback
-                cur.execute(query_deck, (deck_name, owner_id, bracket, deck_id))
-                cur.execute(query_commander_colors_fallback, (colors, deck_id))
+        cur.execute(query, (deck_name, owner_id, bracket, deck_id))
 
 def delete_deck(deck_id):
     """Permanently deletes a deck and its commander associations."""

@@ -75,10 +75,8 @@ if tab_log:
     with tab_log:
         st.subheader("⚔️ Live Match Companion & Logger")
 
-        # Session key based on current authenticated role (e.g., 'Admin' or 'Logger')
         active_session_key = st.session_state.get("user_role", "Logger")
 
-        # 1. LOAD LIVE SESSION FROM DATABASE FOR THIS SPECIFIC USER ROLE
         if "session_loaded_from_db" not in st.session_state:
             db_session = db.fetch_live_session(active_session_key)
             st.session_state.timer_running = db_session["timer_running"]
@@ -87,7 +85,6 @@ if tab_log:
             st.session_state.live_turn_count = db_session["live_turn_count"]
             st.session_state.session_loaded_from_db = True
 
-        # Helper function to sync session state back to Supabase under user's role
         def sync_companion_to_db():
             db.update_live_session(
                 active_session_key,
@@ -97,13 +94,11 @@ if tab_log:
                 st.session_state.live_turn_count
             )
 
-        # 2. Live Time Calculation
         import time
         current_elapsed = st.session_state.timer_elapsed_seconds
         if st.session_state.timer_running and st.session_state.timer_start_time is not None:
             current_elapsed += int(time.time() - st.session_state.timer_start_time)
 
-        # Live Companion Controller
         with st.expander(f"⏱️ Live Game Companion ({active_session_key} Pod)", expanded=True):
             col_timer, col_turns = st.columns(2)
             
@@ -181,7 +176,6 @@ if tab_log:
         if "input_duration" not in st.session_state:
             st.session_state["input_duration"] = 45
 
-        # --- FORM CLEARING VERSION TRACKER ---
         if "form_version" not in st.session_state:
             st.session_state.form_version = 0
 
@@ -195,39 +189,17 @@ if tab_log:
             player_dict = {p['display_name']: p['player_id'] for p in players}
             player_names = list(player_dict.keys())
 
-            # Fetch all decks across the playgroup using built-in db function
             all_global_decks = db.fetch_all_decks_with_owners() if hasattr(db, 'fetch_all_decks_with_owners') else []
 
             col1, col2, col3, col4 = st.columns(4)
             with col1:
-                total_turns = st.number_input(
-                    "Total Turns", 
-                    min_value=1, 
-                    max_value=50, 
-                    key="input_total_turns"
-                )
+                total_turns = st.number_input("Total Turns", min_value=1, max_value=50, key="input_total_turns")
             with col2:
-                duration = st.number_input(
-                    "Duration (mins)", 
-                    min_value=1, 
-                    max_value=500, 
-                    key="input_duration"
-                )
+                duration = st.number_input("Duration (mins)", min_value=1, max_value=500, key="input_duration")
             with col3:
-                bracket_level = st.selectbox(
-                    "Game Bracket",
-                    options=[1, 2, 3, 4, 5],
-                    index=2,
-                    help="Bracket 1: Precon | Bracket 2: Low-Mid | Bracket 3: High/Optimized | Bracket 4: Very High | Bracket 5: cEDH",
-                    key="input_bracket"
-                )
+                bracket_level = st.selectbox("Game Bracket", options=[1, 2, 3, 4, 5], index=2, key="input_bracket")
             with col4:
-                game_medium = st.selectbox(
-                    "Platform / Medium",
-                    options=["In Person 🃏", "Convoke 💻", "SpellTable 📹"],
-                    index=0,
-                    key="input_medium"
-                )
+                game_medium = st.selectbox("Platform / Medium", options=["In Person 🃏", "Convoke 💻", "SpellTable 📹"], index=0, key="input_medium")
 
             win_condition = st.selectbox(
                 "Win Condition",
@@ -239,30 +211,16 @@ if tab_log:
 
             st.divider()
             
-            # --- PLAYER COUNT SELECTOR ---
             col_p1, col_p2 = st.columns([1, 2])
             with col_p1:
-                num_players = st.selectbox(
-                    "Number of Players",
-                    options=[3, 4],
-                    index=1,
-                    help="Default is 4 players, but you can switch to 3 for a 3-player pod.",
-                    key=f"input_num_players_{form_v}"
-                )
+                num_players = st.selectbox("Number of Players", options=[3, 4], index=1, key=f"input_num_players_{form_v}")
 
             st.subheader("Participants")
             participants_input = []
 
             for seat in range(1, num_players + 1):
                 with st.expander(f"👤 Seat {seat}", expanded=(seat == 1)):
-                    selected_player_name = st.selectbox(
-                        "Player", 
-                        player_names,
-                        index=None,
-                        placeholder="Select player...",
-                        key=f"seat_player_{seat}_{form_v}"
-                    )
-                    
+                    selected_player_name = st.selectbox("Player", player_names, index=None, placeholder="Select player...", key=f"seat_player_{seat}_{form_v}")
                     is_borrowing = st.checkbox("🎁 Borrowing a deck from someone else?", key=f"seat_borrow_{seat}_{form_v}")
                     
                     selected_player_id = None
@@ -270,37 +228,19 @@ if tab_log:
                     
                     if selected_player_name:
                         selected_player_id = player_dict[selected_player_name]
-                        
                         if is_borrowing:
-                            # Show ALL decks across the playgroup with owner labels
                             if all_global_decks:
-                                global_deck_dict = {
-                                    f"{d['deck_name']} (Owner: {d['owner_name']})": d['deck_id'] 
-                                    for d in all_global_decks
-                                }
-                                selected_deck_label = st.selectbox(
-                                    "Select Borrowed Deck", 
-                                    list(global_deck_dict.keys()),
-                                    index=None,
-                                    placeholder="Select borrowed deck...",
-                                    key=f"seat_deck_borrowed_{seat}_{form_v}"
-                                )
+                                global_deck_dict = {f"{d['deck_name']} (Owner: {d['owner_name']})": d['deck_id'] for d in all_global_decks}
+                                selected_deck_label = st.selectbox("Select Borrowed Deck", list(global_deck_dict.keys()), index=None, placeholder="Select borrowed deck...", key=f"seat_deck_borrowed_{seat}_{form_v}")
                                 if selected_deck_label:
                                     selected_deck_id = global_deck_dict[selected_deck_label]
                             else:
                                 st.caption("⚠️ No global decks found.")
                         else:
-                            # Show ONLY decks owned by the selected player
                             available_decks = db.fetch_player_decks(selected_player_id)
                             if available_decks:
                                 deck_dict = {f"{d['deck_name']} (⚡ Bracket {d.get('bracket', 3)})": d['deck_id'] for d in available_decks}
-                                selected_deck_name = st.selectbox(
-                                    "Deck", 
-                                    list(deck_dict.keys()),
-                                    index=None,
-                                    placeholder="Select deck...",
-                                    key=f"seat_deck_{seat}_{form_v}"
-                                )
+                                selected_deck_name = st.selectbox("Deck", list(deck_dict.keys()), index=None, placeholder="Select deck...", key=f"seat_deck_{seat}_{form_v}")
                                 if selected_deck_name:
                                     selected_deck_id = deck_dict[selected_deck_name]
                             else:
@@ -324,7 +264,6 @@ if tab_log:
 
             notes = st.text_input("Match Notes (Optional)", placeholder="e.g. Turn 6 Rhystic Study went unanswered", key=f"input_match_notes_{form_v}")
             
-            # --- ACTION BUTTONS ---
             col_save1, col_save2 = st.columns(2)
             with col_save1:
                 submit_match = st.button("💾 Save Game Log (Clear Form)", use_container_width=True, type="primary", key=f"btn_save_clear_{form_v}")
@@ -355,7 +294,6 @@ if tab_log:
                     }
                     db.log_game_session(game_data, participants_input)
                     
-                    # Reset session state and db row for live timer
                     st.session_state.timer_running = False
                     st.session_state.timer_start_time = None
                     st.session_state.timer_elapsed_seconds = 0
@@ -363,23 +301,13 @@ if tab_log:
                     db.update_live_session(active_session_key, False, None, 0, 1)
 
                     if submit_match:
-                        # FULL CLEAR: Increment form version so Streamlit generates completely fresh, blank widgets
                         st.session_state.form_version += 1
                         st.toast("Game logged & form cleared!", icon="🧹")
 
                     elif rematch_submit:
-                        # REMATCH: Delete ONLY the keys we want to reset (mulligans, winners, win con, notes).
-                        keys_to_reset = [
-                            f"input_win_condition_{form_v}",
-                            f"input_match_notes_{form_v}"
-                        ]
-                        
+                        keys_to_reset = [f"input_win_condition_{form_v}", f"input_match_notes_{form_v}"]
                         for seat in range(1, num_players + 1):
-                            keys_to_reset.extend([
-                                f"seat_mull_{seat}_{form_v}",
-                                f"seat_win_{seat}_{form_v}"
-                            ])
-                        
+                            keys_to_reset.extend([f"seat_mull_{seat}_{form_v}", f"seat_win_{seat}_{form_v}"])
                         for k in keys_to_reset:
                             if k in st.session_state:
                                 del st.session_state[k]
@@ -406,13 +334,7 @@ if tab_deck:
             with col_o1:
                 owner_name = st.selectbox("Who owns this deck?", player_names, index=None, placeholder="Select a player...")
             with col_o2:
-                new_deck_bracket = st.selectbox(
-                    "Deck Power Bracket",
-                    options=[1, 2, 3, 4, 5],
-                    index=2,
-                    help="Bracket 1: Precon | Bracket 2: Low-Mid | Bracket 3: High/Optimized | Bracket 4: Very High | Bracket 5: cEDH",
-                    key="add_deck_power_bracket"
-                )
+                new_deck_bracket = st.selectbox("Deck Power Bracket", options=[1, 2, 3, 4, 5], index=2, key="add_deck_power_bracket")
 
             st.divider()
             
@@ -432,9 +354,8 @@ if tab_deck:
                             owner_id = player_dict[owner_name]
                             deck_id = mox_url.strip().split('/')[-1]
                             headers = {
-                                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+                                "User-Agent": "Mozilla/5.0",
                                 "Accept": "application/json, text/plain, */*",
-                                "Accept-Language": "en-US,en;q=0.9",
                                 "Referer": "https://www.moxfield.com/"
                             }
                             response = requests.get(f"https://api.moxfield.com/v2/decks/all/{deck_id}", headers=headers)
@@ -458,7 +379,6 @@ if tab_deck:
                                     st.success(f"Successfully imported **{deck_name}** (Bracket {new_deck_bracket})!")
                                     st.balloons()
                                     st.rerun()
-
                             else:
                                 st.error(f"Failed to fetch deck from Moxfield (Error {response.status_code}).")
                         except Exception as e:
@@ -466,7 +386,6 @@ if tab_deck:
 
             with import_manual:
                 manual_deck_name = st.text_input("Deck Name", placeholder="e.g. Tymna / Kraum Opus")
-                
                 col_c1, col_c2 = st.columns(2)
                 with col_c1:
                     comm1_name = st.text_input("Primary Commander Name", placeholder="e.g. Tymna the Weaver")
@@ -492,7 +411,7 @@ if tab_deck:
                             commander_ids.append(comm2_id)
 
                         db.create_deck(owner_id, manual_deck_name.strip(), commander_ids, bracket=new_deck_bracket)
-                        st.success(f"Deck '{manual_deck_name}' (Bracket {new_deck_bracket}) created with {len(commander_ids)} commander(s)!")
+                        st.success(f"Deck '{manual_deck_name}' created with {len(commander_ids)} commander(s)!")
 
 # ------------------------------------------------------------------------------
 # TAB 3: DECK & PLAYER ADMIN (ADMIN ONLY)
@@ -512,11 +431,7 @@ if tab_admin_decks:
             
             with col_add:
                 st.markdown("#### ➕ Add Player")
-                new_player_name = st.text_input(
-                    "Player Name", 
-                    placeholder="e.g. John Doe", 
-                    key="input_add_player_name"
-                )
+                new_player_name = st.text_input("Player Name", placeholder="e.g. John Doe", key="input_add_player_name")
 
                 if st.button("Add Player", type="primary", key="btn_add_player"):
                     clean_name = new_player_name.strip()
@@ -525,7 +440,7 @@ if tab_admin_decks:
                     else:
                         existing_players = [p['display_name'].lower() for p in db.fetch_players()]
                         if clean_name.lower() in existing_players:
-                            st.error(f"Player '{clean_name}' already exists in the database!")
+                            st.error(f"Player '{clean_name}' already exists!")
                         else:
                             try:
                                 db.add_player(clean_name)
@@ -559,34 +474,24 @@ if tab_admin_decks:
             players = db.fetch_players()
             if players:
                 player_dict = {p['display_name']: p['player_id'] for p in players}
-                selected_edit_owner = st.selectbox(
-                    "Select Deck Owner", 
-                    list(player_dict.keys()), 
-                    index=None, 
-                    key="admin_edit_deck_owner_select"
-                )
+                selected_edit_owner = st.selectbox("Select Deck Owner", list(player_dict.keys()), index=None, key="admin_edit_deck_owner_select")
 
                 if selected_edit_owner:
                     owner_id = player_dict[selected_edit_owner]
                     user_decks = db.fetch_player_decks(owner_id)
 
                     if user_decks:
-                        deck_options = {d['deck_name']: d for d in user_decks}
-                        selected_deck_name = st.selectbox(
-                            "Select Deck to Modify", 
-                            list(deck_options.keys()), 
-                            index=None, 
-                            key="admin_edit_deck_select"
-                        )
+                        deck_options = {f"{d['deck_name']} (⚡ Bracket {d.get('bracket', 3)})": d for d in user_decks}
+                        selected_deck_label = st.selectbox("Select Deck to Modify", list(deck_options.keys()), index=None, key="admin_edit_deck_select")
 
-                        if selected_deck_name:
-                            deck_obj = deck_options[selected_deck_name]
+                        if selected_deck_label:
+                            deck_obj = deck_options[selected_deck_label]
                             selected_deck_id = deck_obj['deck_id']
                             curr_bracket = int(deck_obj.get('bracket', 3))
 
                             col_e1, col_e2, col_e3 = st.columns([2, 2, 1])
                             with col_e1:
-                                new_name = st.text_input("Deck Name", value=selected_deck_name, key=f"input_rename_deck_{selected_deck_id}")
+                                new_name = st.text_input("Deck Name", value=deck_obj['deck_name'], key=f"input_rename_deck_{selected_deck_id}")
                             with col_e2:
                                 new_owner_name = st.selectbox(
                                     "Transfer Ownership To", 
@@ -602,36 +507,16 @@ if tab_admin_decks:
                                     key=f"input_deck_bracket_{selected_deck_id}"
                                 )
 
-                            # COLOR IDENTITY SELECTION
-                            color_options = ["W ⚪", "U 🔵", "B 💀", "R 🔥", "G 🌲", "C ⚙️"]
-                            raw_colors = str(deck_obj.get('color_identity', deck_obj.get('colors', '')) or '').upper()
-                            default_colors = [opt for opt in color_options if opt[0] in raw_colors]
-
-                            selected_colors = st.multiselect(
-                                "Color Identity", 
-                                color_options, 
-                                default=default_colors, 
-                                key=f"edit_dcols_{selected_deck_id}"
-                            )
-
                             col_btn_update, col_btn_del = st.columns(2)
 
                             with col_btn_update:
-                                if st.button("💾 Save Changes", type="primary", use_container_width=True, key=f"btn_save_deck_{selected_deck_id}"):
+                                if st.button("💾 Save Deck Changes", type="primary", use_container_width=True, key=f"btn_save_deck_{selected_deck_id}"):
                                     if not new_name.strip():
                                         st.error("Deck name cannot be empty.")
                                     else:
                                         target_owner_id = player_dict[new_owner_name]
-                                        clean_color_str = ", ".join([c.split()[0] for c in selected_colors])
-
-                                        db.update_deck_details(
-                                            selected_deck_id,
-                                            new_name.strip(),
-                                            target_owner_id,
-                                            edit_deck_bracket,
-                                            clean_color_str
-                                        )
-                                        st.toast(f"Updated '{new_name}' ({clean_color_str})!", icon="✅")
+                                        db.update_deck_details(selected_deck_id, new_name.strip(), target_owner_id, edit_deck_bracket)
+                                        st.toast(f"Updated '{new_name}'!", icon="✅")
                                         st.success("Deck updated successfully!")
                                         st.rerun()
 
@@ -640,7 +525,7 @@ if tab_admin_decks:
                                 if st.button("🗑️ Delete Deck", type="secondary", use_container_width=True, key=f"btn_del_deck_{selected_deck_id}"):
                                     if confirm_deck_del:
                                         db.delete_deck(selected_deck_id)
-                                        st.toast(f"Deleted '{selected_deck_name}'!", icon="🗑️")
+                                        st.toast(f"Deleted deck!", icon="🗑️")
                                         st.success("Deck deleted successfully!")
                                         st.rerun()
                                     else:
@@ -648,7 +533,36 @@ if tab_admin_decks:
                     else:
                         st.info("This player has no registered decks.")
 
-        # 3. UPGRADE MANUAL DECK TO MOXFIELD
+        # 3. DIRECT COMMANDER COLOR IDENTITY EDITOR (NEW SEPARATE EXPANDER)
+        with st.expander("🎨 Edit Commander Color Identity", expanded=False):
+            st.markdown("Select a specific Commander card to directly edit its WUBRG color identity:")
+            
+            all_commanders = db.fetch_all_commanders() if hasattr(db, 'fetch_all_commanders') else []
+            if all_commanders:
+                comm_map = {f"{c['name']} (Current Colors: {c['colors']})": c for c in all_commanders}
+                selected_comm_label = st.selectbox("Select Commander Card", list(comm_map.keys()), index=None, key="admin_edit_comm_colors_select")
+                
+                if selected_comm_label:
+                    comm_obj = comm_map[selected_comm_label]
+                    comm_id = comm_obj['commander_id']
+                    
+                    color_options = ["W ⚪", "U 🔵", "B 💀", "R 🔥", "G 🌲", "C ⚙️"]
+                    raw_colors = str(comm_obj['colors']).upper()
+                    default_colors = [opt for opt in color_options if opt[0] in raw_colors]
+
+                    selected_colors = st.multiselect("Color Identity", color_options, default=default_colors, key=f"edit_comm_cols_{comm_id}")
+                    
+                    if st.button("💾 Save Commander Colors", type="primary", key=f"btn_save_comm_cols_{comm_id}"):
+                        clean_color_str = "".join([c.split()[0] for c in selected_colors]) if selected_colors else "C"
+                        
+                        db.update_commander_colors(comm_id, clean_color_str)
+                        st.toast(f"Updated {comm_obj['name']} to {clean_color_str}!", icon="🎨")
+                        st.success(f"Successfully updated {comm_obj['name']} color identity to **{clean_color_str}**!")
+                        st.rerun()
+            else:
+                st.info("No commanders registered in the database.")
+
+        # 4. UPGRADE MANUAL DECK TO MOXFIELD
         with st.expander("🔗 Upgrade Manual Deck to Moxfield", expanded=False):
             st.markdown("Select a player and deck to sync or re-import from a Moxfield link:")
             players = db.fetch_players()
@@ -675,9 +589,8 @@ if tab_admin_decks:
                                     try:
                                         deck_id_hash = mox_url_upgrade.strip().split('/')[-1]
                                         headers = {
-                                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+                                            "User-Agent": "Mozilla/5.0",
                                             "Accept": "application/json, text/plain, */*",
-                                            "Accept-Language": "en-US,en;q=0.9",
                                             "Referer": "https://www.moxfield.com/"
                                         }
                                         response = requests.get(f"https://api.moxfield.com/v2/decks/all/{deck_id_hash}", headers=headers)
@@ -709,7 +622,7 @@ if tab_admin_decks:
                     else:
                         st.info("This player has no registered decks.")
 
-        # 4. VIEW REGISTERED DECKS
+        # 5. VIEW REGISTERED DECKS
         with st.expander("🃏 View Registered Players & Decks", expanded=False):
             all_decks = db.fetch_all_decks_with_owners()
             if all_decks:
@@ -734,17 +647,13 @@ if tab_admin_matches:
     with tab_admin_matches:
         st.subheader("✏️ Match Management & Editing")
 
-        # 1. EDIT LOGGED MATCHES & PARTICIPANTS
         with st.expander("✏️ Edit Logged Matches & Participants", expanded=True):
             st.markdown("Filter by date to view and modify game sessions:")
-            
-            import datetime
             
             col_filter1, col_filter2 = st.columns([1, 2])
             with col_filter1:
                 filter_date = st.date_input("Filter Matches by Date", value=get_ast_today(), key="admin_edit_match_date")
             
-            # Fetch games for chosen date
             games_for_date = db.fetch_games_by_date(filter_date) if hasattr(db, 'fetch_games_by_date') else db.fetch_recent_games(limit=25)
             
             if games_for_date:
@@ -764,7 +673,6 @@ if tab_admin_matches:
                 if selected_edit_game_label:
                     game_to_edit_id = game_options[selected_edit_game_label]
                     
-                    # Fetch existing game and seat data
                     game_data = next((g for g in games_for_date if g['game_id'] == game_to_edit_id), None)
                     seat_participants = db.fetch_game_participants(game_to_edit_id)
                     all_global_decks = db.fetch_all_decks_with_owners() if hasattr(db, 'fetch_all_decks_with_owners') else []
@@ -886,7 +794,6 @@ if tab_admin_matches:
             else:
                 st.info(f"No logged matches found on {filter_date.strftime('%B %d, %Y')}.")
 
-        # 2. DELETE MATCHES
         with st.expander("🗑️ Delete Matches", expanded=False):
             st.markdown("Select a game session to permanently delete from database logs:")
             recent_games = db.fetch_recent_games(limit=20)
@@ -932,14 +839,12 @@ if tab_recap:
             p_df = pd.DataFrame(recap_data['players'])
             d_df = pd.DataFrame(recap_data['decks'])
             
-            # Key Highlights
             mvp_player = p_df.iloc[0]['player_name'] if not p_df.empty else "N/A"
             mvp_wins = p_df.iloc[0]['wins'] if not p_df.empty else 0
             best_deck = d_df.iloc[0]['deck_name'] if not d_df.empty else "N/A"
             
             st.markdown(f"### ⚔️ Session Breakdown — {recap_date.strftime('%B %d, %Y')}")
             
-            # Overview Grid Metrics
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Matches Logged", ov['total_games'])
             m2.metric("Total Playtime", f"{int(ov['total_playtime'])} mins")
@@ -948,7 +853,6 @@ if tab_recap:
             
             st.divider()
             
-            # Player & Deck Summary Tables
             col_p_tab, col_d_tab = st.columns(2)
             
             with col_p_tab:
@@ -981,10 +885,8 @@ if tab_recap:
                 
             st.divider()
             
-            # --- CHAT COPYABLE TEXT GENERATOR ---
             st.markdown("#### 💬 Group Chat Summary Export")
             
-            # Build clean text summary for WhatsApp/Discord
             summary_text = f"⚔️ *EDH SESSION RECAP — {recap_date.strftime('%b %d, %Y')}*\n"
             summary_text += f"📊 *Total Games:* {ov['total_games']} | *Playtime:* {int(ov['total_playtime'])} mins | *Avg:* Turn {ov['avg_turns']}\n"
             summary_text += f"🏆 *Session MVP:* {mvp_player} ({mvp_wins} Wins)\n"
@@ -1005,10 +907,8 @@ if tab_recap:
 with tab_stats:
     st.subheader("📊 Playgroup Operations & Metrics")
     
-    # 1. TOP METRICS & OVERVIEW
     raw_stats = db.get_player_stats()
     all_decks = db.get_all_deck_performance_stats()
-    most_common_bracket = db.get_most_common_deck_bracket() if hasattr(db, 'get_most_common_deck_bracket') else "N/A"
     
     total_games_played = db.get_total_games_count() if hasattr(db, 'get_total_games_count') else (sum([dict(r)['wins'] for r in raw_stats]) if raw_stats else 0)
     total_registered_decks = len(all_decks) if all_decks else 0
@@ -1022,7 +922,6 @@ with tab_stats:
         avg_turns = round(overview_df['avg_turns'].mean(), 1)
         avg_duration = round(overview_df['avg_duration'].mean(), 0)
 
-    # Overview Metrics Grid (3 columns)
     col_m1, col_m2, col_m3 = st.columns(3)
     with col_m1:
         st.metric("Total Matches Logged", total_games_played)
@@ -1035,7 +934,6 @@ with tab_stats:
     
     st.divider()
 
-    # 2 📜 RECENT MATCHES CARD LOG
     st.markdown("### 📜 Last 2 Matches Logged")
     recent_2_games = db.fetch_last_n_games_detailed(limit=2) if hasattr(db, 'fetch_last_n_games_detailed') else []
     
@@ -1054,7 +952,6 @@ with tab_stats:
                     if g['notes']:
                         st.caption(f"📝 **Notes:** {g['notes']}")
 
-                # Seat Table
                 seat_rows = []
                 for s in g['seats']:
                     seat_rows.append({
@@ -1070,7 +967,6 @@ with tab_stats:
 
     st.divider()
 
-    # 3. DECK OWNERSHIP & COLOR DISTRIBUTION
     st.markdown("### 🧮 Playgroup Arsenal & Deck Ownership")
     col_ownership, col_colors = st.columns(2)
 
@@ -1119,7 +1015,6 @@ with tab_stats:
 
     st.divider()
 
-    # 4. PLAYER LEADERBOARD
     st.markdown("### 🏆 Player Leaderboard")
     if raw_stats:
         df_players = pd.DataFrame([dict(row) for row in raw_stats])
@@ -1144,7 +1039,6 @@ with tab_stats:
 
     st.divider()
 
-    # 5. ALL DECKS PERFORMANCE TABLE
     st.markdown("### 🃏 Complete Deck Performance")
     if all_decks:
         df_decks = pd.DataFrame([dict(row) for row in all_decks])
@@ -1173,7 +1067,6 @@ with tab_stats:
 
     st.divider()
 
-    # 6. COLOR IDENTITY WIN RATES
     st.markdown("### 🎨 Color Identity Win Rates")
     color_stats = db.get_color_identity_stats()
     if color_stats:
@@ -1238,7 +1131,6 @@ with tab_stats:
 
     st.divider()
 
-    # 7. BRACKET PERFORMANCE & DISTRIBUTION
     st.markdown("### 🎯 Bracket Distribution & Game Velocity")
     if hasattr(db, 'get_bracket_stats'):
         bracket_data = db.get_bracket_stats()
@@ -1286,7 +1178,6 @@ with tab_stats:
         else:
             st.info("No bracket data logged yet.")
 
-    # 8. PLATFORM / MEDIUM DISTRIBUTION
     if hasattr(db, 'get_medium_stats'):
         st.divider()
         st.markdown("### 🌐 Game Platform Distribution")
