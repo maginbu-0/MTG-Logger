@@ -47,14 +47,16 @@ add_deck_page = st.Page("pages/2_Add_Deck.py", title="Add Deck", icon="➕")
 recap_page = st.Page("pages/3_Daily_Recap.py", title="Daily Recap", icon="📋")
 deck_admin_page = st.Page("pages/5_Deck_Admin.py", title="Deck & Player Admin", icon="🛠️")
 match_admin_page = st.Page("pages/6_Match_Admin.py", title="Match Admin", icon="✏️")
+random_card_page = st.Page("pages/7_Random_Card.py", title="Random Card of the Day", icon="🎲")
+
 
 # Analytics is now FIRST in every list, making it the default landing page
 if role == "Admin":
-    pg = st.navigation([analytics_page, log_page, add_deck_page, recap_page, deck_admin_page, match_admin_page])
+    pg = st.navigation([analytics_page, log_page, add_deck_page, recap_page, deck_admin_page, match_admin_page, random_card_page])
 elif role == "Logger":
-    pg = st.navigation([analytics_page, log_page, add_deck_page, recap_page])
+    pg = st.navigation([analytics_page, log_page, add_deck_page, recap_page, random_card_page])
 else:
     st.info("ℹ️ You are in Read-Only mode. Enter a PIN in the sidebar to log games or add decks.")
-    pg = st.navigation([analytics_page, recap_page])
+    pg = st.navigation([analytics_page, recap_page, random_card_page])
 
 pg.run()
