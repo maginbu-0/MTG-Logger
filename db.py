@@ -439,36 +439,61 @@ def update_live_session(session_key, running, start_time, elapsed, turns):
         cur.execute(query, (session_key, running, start_time, elapsed, turns))
 
 def fetch_all_commanders():
-    """Fetches all unique registered commanders for selection."""
-    query = """
-        SELECT commander_id, name, COALESCE(color_identity, colors, 'C') AS colors
-        FROM commanders
-        ORDER BY name ASC;
-    """
+    """Fetches all unique registered commanders safely, checking available color columns."""
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute(query)
-        return cur.fetchall()
-
-def update_commander_colors(commander_id, clean_colors):
-    """Updates the color identity of a specific commander entity directly."""
-    query = """
-        UPDATE commanders
-        SET color_identity = %s
-        WHERE commander_id = %s;
-    """
-    query_fallback = """
-        UPDATE commanders
-        SET colors = %s
-        WHERE commander_id = %s;
-    """
-    with get_db() as conn:
-        cur = conn.cursor()
+        
+        # 1. Try fetching with 'color_identity'
         try:
-            cur.execute(query, (clean_colors, commander_id))
+            cur.execute("SELECT commander_id, name, COALESCE(color_identity, 'C') AS colors FROM commanders ORDER BY name ASC;")
+            return cur.fetchall()
         except Exception:
             conn.rollback()
-            cur.execute(query_fallback, (clean_colors, commander_id))
+
+        # 2. Try fetching with 'colors'
+        try:
+            cur.execute("SELECT commander_id, name, COALESCE(colors, 'C') AS colors FROM commanders ORDER BY name ASC;")
+            return cur.fetchall()
+        except Exception:
+            conn.rollback()
+
+        # 3. Try fetching with 'color'
+        try:
+            cur.execute("SELECT commander_id, name, COALESCE(color, 'C') AS colors FROM commanders ORDER BY name ASC;")
+            return cur.fetchall()
+        except Exception:
+            conn.rollback()
+
+        # 4. Fallback: Fetch without color column
+        cur.execute("SELECT commander_id, name, 'C' AS colors FROM commanders ORDER BY name ASC;")
+        return cur.fetchall()
+
+
+def update_commander_colors(commander_id, clean_colors):
+    """Updates color identity on the commanders table safely across possible column names."""
+    with get_db() as conn:
+        cur = conn.cursor()
+        
+        # Try 'color_identity'
+        try:
+            cur.execute("UPDATE commanders SET color_identity = %s WHERE commander_id = %s;", (clean_colors, commander_id))
+            return
+        except Exception:
+            conn.rollback()
+
+        # Try 'colors'
+        try:
+            cur.execute("UPDATE commanders SET colors = %s WHERE commander_id = %s;", (clean_colors, commander_id))
+            return
+        except Exception:
+            conn.rollback()
+
+        # Try 'color'
+        try:
+            cur.execute("UPDATE commanders SET color = %s WHERE commander_id = %s;", (clean_colors, commander_id))
+            return
+        except Exception:
+            conn.rollback()
 
 def update_deck_details(deck_id, deck_name, owner_id=None, bracket=3, *args, **kwargs):
     """Updates deck name, owner, and bracket on the decks table cleanly."""
