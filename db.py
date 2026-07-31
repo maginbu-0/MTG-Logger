@@ -438,14 +438,16 @@ def update_live_session(session_key, running, start_time, elapsed, turns):
         cur = conn.cursor()
         cur.execute(query, (session_key, running, start_time, elapsed, turns))
 
-def update_deck_details(deck_id, deck_name, owner_id=None, bracket=3, colors=None, **kwargs):
+def update_deck_details(deck_id, deck_name, owner_id=None, bracket=3, colors=None, *args, **kwargs):
     """
-    Updates deck details in Supabase safely, handling both keyword and positional arguments.
+    Updates deck details in Supabase positionally or via kwargs.
     """
-    # Fallbacks in case positional parameters or legacy kwargs like 'target_owner_id' or 'commander_name' were passed
-    final_owner_id = owner_id or kwargs.get('target_owner_id')
-    final_colors = colors or kwargs.get('color_identity') or kwargs.get('colors')
-    
+    # Grab colors or owner_id if passed as legacy kwargs or extra positional args
+    if not owner_id and 'target_owner_id' in kwargs:
+        owner_id = kwargs['target_owner_id']
+    if not colors and 'clean_color_str' in kwargs:
+        colors = kwargs['clean_color_str']
+
     query = """
         UPDATE decks 
         SET deck_name = %s,
@@ -467,10 +469,10 @@ def update_deck_details(deck_id, deck_name, owner_id=None, bracket=3, colors=Non
     with get_db() as conn:
         cur = conn.cursor()
         try:
-            cur.execute(query, (deck_name, final_owner_id, bracket, final_colors, deck_id))
+            cur.execute(query, (deck_name, owner_id, bracket, colors, deck_id))
         except Exception:
             conn.rollback()
-            cur.execute(query_fallback, (deck_name, final_owner_id, bracket, final_colors, deck_id))
+            cur.execute(query_fallback, (deck_name, owner_id, bracket, colors, deck_id))
 
 def delete_deck(deck_id):
     """Permanently deletes a deck and its commander associations."""

@@ -624,12 +624,13 @@ if tab_admin_decks:
                                         target_owner_id = player_dict[new_owner_name]
                                         clean_color_str = ", ".join([c.split()[0] for c in selected_colors])
 
+                                        # Replace the multi-line keyword call with positional arguments:
                                         db.update_deck_details(
-                                            deck_id=selected_deck_id, 
-                                            deck_name=new_name.strip(), 
-                                            owner_id=target_owner_id, 
-                                            bracket=edit_deck_bracket,
-                                            colors=clean_color_str
+                                            selected_deck_id,
+                                            new_name.strip(),
+                                            target_owner_id,
+                                            edit_deck_bracket,
+                                            clean_color_str
                                         )
                                         st.toast(f"Updated '{new_name}' ({clean_color_str})!", icon="✅")
                                         st.success("Deck updated successfully!")
