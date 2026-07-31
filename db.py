@@ -12,10 +12,8 @@ DATABASE_URL = None
 
 # 2. Safely attempt to read Streamlit Secrets without triggering an unhandled exception
 try:
-    # Try directly accessing the key inside st.secrets
     DATABASE_URL = st.secrets.get("DATABASE_URL")
 except Exception:
-    # If st.secrets is completely uninitialized/empty on Streamlit Cloud, catch the error silently
     DATABASE_URL = None
 
 # 3. Fallback to OS environment variable (.env) if st.secrets was empty or missing
@@ -42,18 +40,25 @@ def get_db():
     finally:
         conn.close()
 
+# ------------------------------------------------------------------------------
+# CACHED FETCH FUNCTIONS (READ OPERATIONS)
+# ------------------------------------------------------------------------------
+
+@st.cache_data(ttl=300)
 def fetch_players():
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT player_id, display_name, role FROM players ORDER BY display_name ASC;")
         return cur.fetchall()
 
+@st.cache_data(ttl=300)
 def fetch_commanders():
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT commander_id, name, color_identity FROM commanders ORDER BY name ASC;")
         return cur.fetchall()
 
+@st.cache_data(ttl=300)
 def fetch_player_decks(player_id):
     """Fetches all decks for a player including bracket level, formatting partner commanders as 'Comm A // Comm B'."""
     query = """
@@ -75,8 +80,456 @@ def fetch_player_decks(player_id):
         cur.execute(query, (player_id,))
         return cur.fetchall()
 
+@st.cache_data(ttl=300)
+def fetch_all_decks_with_owners():
+    """Fetches all registered decks and their corresponding owners."""
+    query = """
+        SELECT 
+            d.deck_id,
+            d.deck_name,
+            p.display_name AS owner_name,
+            STRING_AGG(c.name, ' & ') AS commander_names
+        FROM decks d
+        JOIN players p ON d.player_id = p.player_id
+        LEFT JOIN deck_commanders dc ON d.deck_id = dc.deck_id
+        LEFT JOIN commanders c ON dc.commander_id = c.commander_id
+        GROUP BY d.deck_id, d.deck_name, p.display_name
+        ORDER BY p.display_name, d.deck_name;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        return cur.fetchall()
+
+@st.cache_data(ttl=300)
+def fetch_all_commanders():
+    """Fetches all unique registered commanders safely, checking available color columns."""
+    with get_db() as conn:
+        cur = conn.cursor()
+        
+        try:
+            cur.execute("SELECT commander_id, name, COALESCE(color_identity, 'C') AS colors FROM commanders ORDER BY name ASC;")
+            return cur.fetchall()
+        except Exception:
+            conn.rollback()
+
+        try:
+            cur.execute("SELECT commander_id, name, COALESCE(colors, 'C') AS colors FROM commanders ORDER BY name ASC;")
+            return cur.fetchall()
+        except Exception:
+            conn.rollback()
+
+        try:
+            cur.execute("SELECT commander_id, name, COALESCE(color, 'C') AS colors FROM commanders ORDER BY name ASC;")
+            return cur.fetchall()
+        except Exception:
+            conn.rollback()
+
+        cur.execute("SELECT commander_id, name, 'C' AS colors FROM commanders ORDER BY name ASC;")
+        return cur.fetchall()
+
+@st.cache_data(ttl=300)
+def fetch_recent_games(limit=25):
+    """Fetches a list of recent games with summary details for deletion/review."""
+    query = """
+        SELECT 
+            g.game_id,
+            g.total_turns,
+            g.win_condition,
+            COALESCE(g.notes, '') AS notes,
+            STRING_AGG(p.display_name, ', ' ORDER BY gp.seat_position) AS participants
+        FROM games g
+        JOIN game_participants gp ON g.game_id = gp.game_id
+        JOIN players p ON gp.player_id = p.player_id
+        GROUP BY g.game_id, g.total_turns, g.win_condition, g.notes
+        ORDER BY g.game_id DESC
+        LIMIT %s;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query, (limit,))
+        return cur.fetchall()
+
+@st.cache_data(ttl=300)
+def fetch_game_participants(game_id):
+    """Fetches seat participants for a game session."""
+    query = "SELECT * FROM game_participants WHERE game_id = %s;"
+    
+    with get_db() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute(query, (game_id,))
+            rows = cur.fetchall()
+        except Exception:
+            conn.rollback()
+            cur.execute("SELECT * FROM game_participants WHERE session_id = %s;", (game_id,))
+            rows = cur.fetchall()
+
+        if not rows:
+            return []
+
+        participants = [dict(r) for r in rows]
+        participants.sort(key=lambda x: x.get('seat_number', x.get('seat_position', x.get('seat', 0))))
+        return participants
+
+@st.cache_data(ttl=300)
+def fetch_games_by_date(selected_date):
+    """Fetches games logged on a specific date in AST timezone directly from played_at."""
+    date_str = str(selected_date)
+    
+    query = """
+        SELECT 
+            g.game_id,
+            g.total_turns,
+            g.win_condition,
+            COALESCE(g.notes, '') AS notes,
+            STRING_AGG(p.display_name, ', ' ORDER BY gp.seat_position) AS participants
+        FROM games g
+        JOIN game_participants gp ON g.game_id = gp.game_id
+        JOIN players p ON gp.player_id = p.player_id
+        WHERE TO_CHAR(g.played_at AT TIME ZONE 'America/Santo_Domingo', 'YYYY-MM-DD') = %s
+        GROUP BY g.game_id, g.total_turns, g.win_condition, g.notes
+        ORDER BY g.game_id DESC;
+    """
+    
+    query_fallback = """
+        SELECT 
+            g.game_id,
+            g.total_turns,
+            g.win_condition,
+            COALESCE(g.notes, '') AS notes,
+            STRING_AGG(p.display_name, ', ' ORDER BY gp.seat_position) AS participants
+        FROM games g
+        JOIN game_participants gp ON g.game_id = gp.game_id
+        JOIN players p ON gp.player_id = p.player_id
+        WHERE TO_CHAR(g.played_at - INTERVAL '4 hours', 'YYYY-MM-DD') = %s
+        GROUP BY g.game_id, g.total_turns, g.win_condition, g.notes
+        ORDER BY g.game_id DESC;
+    """
+    
+    with get_db() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute(query, (date_str,))
+            return cur.fetchall()
+        except Exception:
+            conn.rollback()
+            cur.execute(query_fallback, (date_str,))
+            return cur.fetchall()
+
+@st.cache_data(ttl=300)
+def fetch_daily_session_summary(selected_date):
+    """Aggregates all games, player records, and top performers for a single date in local AST time."""
+    date_str = str(selected_date)
+    
+    with get_db() as conn:
+        cur = conn.cursor()
+        
+        query_overview = """
+            SELECT 
+                COUNT(DISTINCT g.game_id) AS total_games,
+                ROUND(AVG(g.total_turns), 1) AS avg_turns,
+                ROUND(AVG(g.duration_minutes), 0) AS avg_duration,
+                SUM(g.duration_minutes) AS total_playtime
+            FROM games g
+            WHERE TO_CHAR(g.played_at - INTERVAL '4 hours', 'YYYY-MM-DD') = %s;
+        """
+        cur.execute(query_overview, (date_str,))
+        overview = cur.fetchone()
+        
+        if not overview or overview['total_games'] == 0:
+            return None
+            
+        query_players = """
+            SELECT 
+                p.display_name AS player_name,
+                COUNT(gp.game_id) AS games_played,
+                SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END) AS wins,
+                ROUND((SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END)::numeric / COUNT(gp.game_id)) * 100, 1) AS win_rate
+            FROM game_participants gp
+            JOIN games g ON gp.game_id = g.game_id
+            JOIN players p ON gp.player_id = p.player_id
+            WHERE TO_CHAR(g.played_at - INTERVAL '4 hours', 'YYYY-MM-DD') = %s
+            GROUP BY p.player_id, p.display_name
+            ORDER BY wins DESC, games_played ASC;
+        """
+        cur.execute(query_players, (date_str,))
+        players_summary = cur.fetchall()
+        
+        query_decks = """
+            SELECT 
+                d.deck_name,
+                p.display_name AS owner_name,
+                COUNT(gp.game_id) AS games_played,
+                SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END) AS wins,
+                ROUND((SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END)::numeric / COUNT(gp.game_id)) * 100, 1) AS win_rate
+            FROM game_participants gp
+            JOIN games g ON gp.game_id = g.game_id
+            JOIN decks d ON gp.deck_id = d.deck_id
+            JOIN players p ON gp.player_id = p.player_id
+            WHERE TO_CHAR(g.played_at - INTERVAL '4 hours', 'YYYY-MM-DD') = %s
+            GROUP BY d.deck_id, d.deck_name, p.display_name
+            ORDER BY wins DESC, games_played ASC;
+        """
+        cur.execute(query_decks, (date_str,))
+        decks_summary = cur.fetchall()
+        
+        return {
+            "overview": dict(overview),
+            "players": [dict(r) for r in players_summary],
+            "decks": [dict(r) for r in decks_summary]
+        }
+
+@st.cache_data(ttl=300)
+def get_player_stats():
+    query = """
+        SELECT 
+            p.display_name,
+            COUNT(gp.game_id) AS games_played,
+            SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END) AS wins
+        FROM players p
+        JOIN game_participants gp ON p.player_id = gp.player_id
+        GROUP BY p.player_id
+        HAVING COUNT(gp.game_id) > 0
+        ORDER BY wins DESC, games_played ASC;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        return cur.fetchall()
+
+@st.cache_data(ttl=300)
+def get_deck_stats():
+    query = """
+        SELECT 
+            d.deck_name,
+            p.display_name AS owner_name,
+            COUNT(gp.game_id) AS games_played,
+            SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END) AS wins
+        FROM decks d
+        JOIN game_participants gp ON d.deck_id = gp.deck_id
+        JOIN players p ON d.player_id = p.player_id
+        GROUP BY d.deck_id, d.deck_name, p.display_name
+        HAVING COUNT(gp.game_id) > 0
+        ORDER BY wins DESC, games_played ASC;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        return cur.fetchall()
+
+@st.cache_data(ttl=300)
+def get_color_identity_stats():
+    query = """
+        SELECT 
+            c.color_identity,
+            COUNT(gp.game_id) AS games_played,
+            SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END) AS wins
+        FROM commanders c
+        JOIN deck_commanders dc ON c.commander_id = dc.commander_id
+        JOIN decks d ON dc.deck_id = d.deck_id
+        JOIN game_participants gp ON d.deck_id = gp.deck_id
+        GROUP BY c.color_identity
+        HAVING COUNT(gp.game_id) > 0
+        ORDER BY wins DESC, games_played ASC;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        return cur.fetchall()
+
+@st.cache_data(ttl=300)
+def get_game_overview_stats():
+    query = """
+        SELECT 
+            AVG(total_turns) AS avg_turns,
+            AVG(duration_minutes) AS avg_duration,
+            win_condition,
+            COUNT(*) as condition_count
+        FROM games
+        GROUP BY win_condition;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        return cur.fetchall()
+
+@st.cache_data(ttl=300)
+def get_deck_ownership_stats():
+    query = """
+        SELECT 
+            p.display_name AS player_name,
+            COUNT(d.deck_id) AS deck_count
+        FROM players p
+        LEFT JOIN decks d ON p.player_id = d.player_id
+        GROUP BY p.player_id, p.display_name
+        ORDER BY deck_count DESC, player_name ASC;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        return cur.fetchall()
+
+@st.cache_data(ttl=300)
+def get_color_presence_stats():
+    query = """
+        SELECT 
+            c.color_identity,
+            COUNT(DISTINCT d.deck_id) AS deck_count
+        FROM decks d
+        JOIN deck_commanders dc ON d.deck_id = dc.deck_id
+        JOIN commanders c ON dc.commander_id = c.commander_id
+        GROUP BY c.color_identity;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        return cur.fetchall()
+
+@st.cache_data(ttl=300)
+def get_all_deck_performance_stats():
+    query = """
+        SELECT 
+            d.deck_name,
+            p.display_name AS owner_name,
+            COUNT(gp.game_id) AS games_played,
+            SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END) AS wins
+        FROM decks d
+        JOIN players p ON d.player_id = p.player_id
+        LEFT JOIN game_participants gp ON d.deck_id = gp.deck_id
+        GROUP BY d.deck_id, d.deck_name, p.display_name
+        ORDER BY games_played DESC, wins DESC, d.deck_name ASC;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        return cur.fetchall()
+
+@st.cache_data(ttl=300)
+def get_bracket_stats():
+    query = """
+        SELECT 
+            bracket,
+            COUNT(*) AS total_games,
+            ROUND(AVG(total_turns), 1) AS avg_turns,
+            ROUND(AVG(duration_minutes), 0) AS avg_duration
+        FROM games
+        WHERE bracket IS NOT NULL
+        GROUP BY bracket
+        ORDER BY bracket ASC;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        return cur.fetchall()
+
+@st.cache_data(ttl=300)
+def get_medium_stats():
+    query = """
+        SELECT 
+            COALESCE(medium, 'In Person') AS medium,
+            COUNT(*) AS total_games,
+            ROUND(AVG(duration_minutes)::numeric, 0) AS avg_duration
+        FROM games
+        GROUP BY COALESCE(medium, 'In Person')
+        ORDER BY total_games DESC;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        return cur.fetchall()
+
+@st.cache_data(ttl=300)
+def get_most_common_deck_bracket():
+    query = """
+        SELECT bracket, COUNT(*) as count 
+        FROM decks 
+        WHERE bracket IS NOT NULL 
+        GROUP BY bracket 
+        ORDER BY count DESC, bracket ASC 
+        LIMIT 1;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query)
+        row = cur.fetchone()
+        if row:
+            return f"Bracket {row['bracket']}", f"{row['count']} decks"
+        return "N/A", ""
+
+@st.cache_data(ttl=300)
+def fetch_last_n_games_detailed(limit=2):
+    query_games = """
+        SELECT game_id, total_turns, duration_minutes, win_condition, COALESCE(notes, '') as notes, bracket, medium
+        FROM games
+        ORDER BY game_id DESC
+        LIMIT %s;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query_games, (limit,))
+        games = cur.fetchall()
+        
+        detailed_games = []
+        for g in games:
+            g_dict = dict(g)
+            g_id = g_dict['game_id']
+            
+            query_participants = """
+                SELECT 
+                    gp.seat_position,
+                    gp.mulligan_count,
+                    gp.is_winner,
+                    p.display_name AS player_name,
+                    d.deck_name,
+                    COALESCE(d.bracket, 3) AS deck_bracket
+                FROM game_participants gp
+                JOIN players p ON gp.player_id = p.player_id
+                JOIN decks d ON gp.deck_id = d.deck_id
+                WHERE gp.game_id = %s
+                ORDER BY gp.seat_position ASC;
+            """
+            cur.execute(query_participants, (g_id,))
+            g_dict['seats'] = cur.fetchall()
+            detailed_games.append(g_dict)
+            
+        return detailed_games
+
+# ------------------------------------------------------------------------------
+# UNCACHED REAL-TIME SESSION FUNCTIONS
+# ------------------------------------------------------------------------------
+
+def fetch_live_session(session_key="Viewer"):
+    query = "SELECT timer_running, timer_start_time, timer_elapsed_seconds, live_turn_count FROM live_game_sessions WHERE session_key = %s;"
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query, (session_key,))
+        row = cur.fetchone()
+        if row:
+            return dict(row)
+        return {"timer_running": False, "timer_start_time": None, "timer_elapsed_seconds": 0, "live_turn_count": 1}
+
+def update_live_session(session_key, running, start_time, elapsed, turns):
+    query = """
+        INSERT INTO live_game_sessions (session_key, timer_running, timer_start_time, timer_elapsed_seconds, live_turn_count, updated_at)
+        VALUES (%s, %s, %s, %s, %s, NOW())
+        ON CONFLICT (session_key) 
+        DO UPDATE SET 
+            timer_running = EXCLUDED.timer_running,
+            timer_start_time = EXCLUDED.timer_start_time,
+            timer_elapsed_seconds = EXCLUDED.timer_elapsed_seconds,
+            live_turn_count = EXCLUDED.live_turn_count,
+            updated_at = NOW();
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query, (session_key, running, start_time, elapsed, turns))
+
+# ------------------------------------------------------------------------------
+# WRITE OPERATIONS (MUTATIONS) WITH CACHE INVALIDATION
+# ------------------------------------------------------------------------------
+
 def create_deck(player_id, deck_name, commander_ids, bracket=3):
-    """Creates a deck with power bracket and links 1 or 2 commanders (partner commanders)."""
     query_deck = "INSERT INTO decks (player_id, deck_name, bracket) VALUES (%s, %s, %s) RETURNING deck_id;"
     query_link = "INSERT INTO deck_commanders (deck_id, commander_id) VALUES (%s, %s);"
     
@@ -85,22 +538,18 @@ def create_deck(player_id, deck_name, commander_ids, bracket=3):
         cur.execute(query_deck, (player_id, deck_name, bracket))
         deck_id = cur.fetchone()['deck_id']
         
-        # Link all commanders (handles single or partner commanders)
         for comm_id in commander_ids:
             cur.execute(query_link, (deck_id, comm_id))
             
-        return deck_id
-
-
+    st.cache_data.clear()
+    return deck_id
 
 def log_game_session(game_data, participants):
-    """Logs a game session with explicit AST timestamp tracking."""
     query_game = """
         INSERT INTO games (total_turns, duration_minutes, win_condition, notes, bracket, medium, played_at) 
         VALUES (%s, %s, %s, %s, %s, %s, NOW() - INTERVAL '4 hours') 
         RETURNING game_id;
     """
-    # If played_at isn't present in your games schema, fallback automatically
     query_game_fallback = """
         INSERT INTO games (total_turns, duration_minutes, win_condition, notes, bracket, medium) 
         VALUES (%s, %s, %s, %s, %s, %s) 
@@ -144,10 +593,10 @@ def log_game_session(game_data, participants):
                 p['is_winner']
             ))
 
+    st.cache_data.clear()
     return game_id
 
 def get_or_create_commander(name, color_identity="Unknown"):
-    """Checks if a commander exists by name. If not, adds it to the database."""
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute("SELECT commander_id FROM commanders WHERE name = %s;", (name,))
@@ -156,129 +605,31 @@ def get_or_create_commander(name, color_identity="Unknown"):
         if row:
             return row['commander_id']
         else:
-            # Insert the new commander and use RETURNING commander_id
             cur.execute(
                 "INSERT INTO commanders (name, color_identity) VALUES (%s, %s) RETURNING commander_id;", 
                 (name, color_identity)
             )
-            return cur.fetchone()['commander_id']
-
-
-def get_player_stats():
-    """Aggregates games played and total wins per player."""
-    query = """
-        SELECT 
-            p.display_name,
-            COUNT(gp.game_id) AS games_played,
-            SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END) AS wins
-        FROM players p
-        JOIN game_participants gp ON p.player_id = gp.player_id
-        GROUP BY p.player_id
-        HAVING COUNT(gp.game_id) > 0
-        ORDER BY wins DESC, games_played ASC;
-    """
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(query)
-        return cur.fetchall()
-
-
-def get_deck_stats():
-    """Aggregates games played and total wins per deck."""
-    query = """
-        SELECT 
-            d.deck_name,
-            p.display_name AS owner_name,
-            COUNT(gp.game_id) AS games_played,
-            SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END) AS wins
-        FROM decks d
-        JOIN game_participants gp ON d.deck_id = gp.deck_id
-        JOIN players p ON d.player_id = p.player_id
-        GROUP BY d.deck_id, d.deck_name, p.display_name
-        HAVING COUNT(gp.game_id) > 0
-        ORDER BY wins DESC, games_played ASC;
-    """
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(query)
-        return cur.fetchall()
-
-
-def get_color_identity_stats():
-    """Aggregates win rates based on commander color identity."""
-    query = """
-        SELECT 
-            c.color_identity,
-            COUNT(gp.game_id) AS games_played,
-            SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END) AS wins
-        FROM commanders c
-        JOIN deck_commanders dc ON c.commander_id = dc.commander_id
-        JOIN decks d ON dc.deck_id = d.deck_id
-        JOIN game_participants gp ON d.deck_id = gp.deck_id
-        GROUP BY c.color_identity
-        HAVING COUNT(gp.game_id) > 0
-        ORDER BY wins DESC, games_played ASC;
-    """
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(query)
-        return cur.fetchall()
-
-def get_game_overview_stats():
-    """Calculates meta averages like duration, turns, and win condition counts."""
-    query = """
-        SELECT 
-            AVG(total_turns) AS avg_turns,
-            AVG(duration_minutes) AS avg_duration,
-            win_condition,
-            COUNT(*) as condition_count
-        FROM games
-        GROUP BY win_condition;
-    """
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(query)
-        return cur.fetchall()
-
+            comm_id = cur.fetchone()['commander_id']
+            st.cache_data.clear()
+            return comm_id
 
 def add_player(display_name):
-    """Adds a new player to the database safely."""
     query = "INSERT INTO players (display_name) VALUES (%s) RETURNING player_id;"
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(query, (display_name,))
-        return cur.fetchone()['player_id']
+        pid = cur.fetchone()['player_id']
+    st.cache_data.clear()
+    return pid
 
 def delete_player(player_id):
-    """Deletes or deactivates a player by ID."""
     query = "DELETE FROM players WHERE player_id = %s;"
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(query, (player_id,))
-
-def fetch_recent_games(limit=25):
-    """Fetches a list of recent games with summary details for deletion/review."""
-    query = """
-        SELECT 
-            g.game_id,
-            g.total_turns,
-            g.win_condition,
-            COALESCE(g.notes, '') AS notes,
-            STRING_AGG(p.display_name, ', ' ORDER BY gp.seat_position) AS participants
-        FROM games g
-        JOIN game_participants gp ON g.game_id = gp.game_id
-        JOIN players p ON gp.player_id = p.player_id
-        GROUP BY g.game_id, g.total_turns, g.win_condition, g.notes
-        ORDER BY g.game_id DESC
-        LIMIT %s;
-    """
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(query, (limit,))
-        return cur.fetchall()
+    st.cache_data.clear()
 
 def delete_game_session(game_id):
-    """Deletes a game session and its associated participant records."""
     query_participants = "DELETE FROM game_participants WHERE game_id = %s;"
     query_game = "DELETE FROM games WHERE game_id = %s;"
     
@@ -286,27 +637,7 @@ def delete_game_session(game_id):
         cur = conn.cursor()
         cur.execute(query_participants, (game_id,))
         cur.execute(query_game, (game_id,))
-
-def fetch_all_decks_with_owners():
-    """Fetches all registered decks and their corresponding owners."""
-    query = """
-        SELECT 
-            d.deck_id,
-            d.deck_name,
-            p.display_name AS owner_name,
-            STRING_AGG(c.name, ' & ') AS commander_names
-        FROM decks d
-        JOIN players p ON d.player_id = p.player_id
-        LEFT JOIN deck_commanders dc ON d.deck_id = dc.deck_id
-        LEFT JOIN commanders c ON dc.commander_id = c.commander_id
-        GROUP BY d.deck_id, d.deck_name, p.display_name
-        ORDER BY p.display_name, d.deck_name;
-    """
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(query)
-        return cur.fetchall()
-
+    st.cache_data.clear()
 
 def update_deck_from_moxfield(deck_id, new_deck_name, commander_ids):
     query_update_deck = "UPDATE decks SET deck_name = %s WHERE deck_id = %s;"
@@ -319,184 +650,34 @@ def update_deck_from_moxfield(deck_id, new_deck_name, commander_ids):
         cur.execute(query_clear_commanders, (deck_id,))
         for comm_id in commander_ids:
             cur.execute(query_add_commander, (deck_id, comm_id))
-
-
-def get_deck_ownership_stats():
-    """Returns the total number of registered decks per player."""
-    query = """
-        SELECT 
-            p.display_name AS player_name,
-            COUNT(d.deck_id) AS deck_count
-        FROM players p
-        LEFT JOIN decks d ON p.player_id = d.player_id
-        GROUP BY p.player_id, p.display_name
-        ORDER BY deck_count DESC, player_name ASC;
-    """
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(query)
-        return cur.fetchall()
-
-def get_color_presence_stats():
-    """Counts how many decks in the playgroup contain each individual MTG color."""
-    query = """
-        SELECT 
-            c.color_identity,
-            COUNT(DISTINCT d.deck_id) AS deck_count
-        FROM decks d
-        JOIN deck_commanders dc ON d.deck_id = dc.deck_id
-        JOIN commanders c ON dc.commander_id = c.commander_id
-        GROUP BY c.color_identity;
-    """
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(query)
-        return cur.fetchall()
-
-def get_all_deck_performance_stats():
-    """Fetches ALL registered decks, their owner, games played, wins, and win rates (defaults 0 for unused decks)."""
-    query = """
-        SELECT 
-            d.deck_name,
-            p.display_name AS owner_name,
-            COUNT(gp.game_id) AS games_played,
-            SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END) AS wins
-        FROM decks d
-        JOIN players p ON d.player_id = p.player_id
-        LEFT JOIN game_participants gp ON d.deck_id = gp.deck_id
-        GROUP BY d.deck_id, d.deck_name, p.display_name
-        ORDER BY games_played DESC, wins DESC, d.deck_name ASC;
-    """
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(query)
-        return cur.fetchall()
-
-
-
-
-def get_bracket_stats():
-    """Fetches total games played and average turn counts grouped by power bracket."""
-    query = """
-        SELECT 
-            bracket,
-            COUNT(*) AS total_games,
-            ROUND(AVG(total_turns), 1) AS avg_turns,
-            ROUND(AVG(duration_minutes), 0) AS avg_duration
-        FROM games
-        WHERE bracket IS NOT NULL
-        GROUP BY bracket
-        ORDER BY bracket ASC;
-    """
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(query)
-        return cur.fetchall()
-
-
-def get_medium_stats():
-    """Fetches total games played and average duration grouped by platform medium."""
-    query = """
-        SELECT 
-            COALESCE(medium, 'In Person') AS medium,
-            COUNT(*) AS total_games,
-            ROUND(AVG(duration_minutes)::numeric, 0) AS avg_duration
-        FROM games
-        GROUP BY COALESCE(medium, 'In Person')
-        ORDER BY total_games DESC;
-    """
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(query)
-        return cur.fetchall()
-
-def fetch_live_session(session_key="Viewer"):
-    """Fetches the current live match session state for a specific user role/logger."""
-    query = "SELECT timer_running, timer_start_time, timer_elapsed_seconds, live_turn_count FROM live_game_sessions WHERE session_key = %s;"
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(query, (session_key,))
-        row = cur.fetchone()
-        if row:
-            return dict(row)
-        return {"timer_running": False, "timer_start_time": None, "timer_elapsed_seconds": 0, "live_turn_count": 1}
-
-def update_live_session(session_key, running, start_time, elapsed, turns):
-    """Upserts (inserts or updates) the live match session state for a specific user role/logger."""
-    query = """
-        INSERT INTO live_game_sessions (session_key, timer_running, timer_start_time, timer_elapsed_seconds, live_turn_count, updated_at)
-        VALUES (%s, %s, %s, %s, %s, NOW())
-        ON CONFLICT (session_key) 
-        DO UPDATE SET 
-            timer_running = EXCLUDED.timer_running,
-            timer_start_time = EXCLUDED.timer_start_time,
-            timer_elapsed_seconds = EXCLUDED.timer_elapsed_seconds,
-            live_turn_count = EXCLUDED.live_turn_count,
-            updated_at = NOW();
-    """
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(query, (session_key, running, start_time, elapsed, turns))
-
-def fetch_all_commanders():
-    """Fetches all unique registered commanders safely, checking available color columns."""
-    with get_db() as conn:
-        cur = conn.cursor()
-        
-        # 1. Try fetching with 'color_identity'
-        try:
-            cur.execute("SELECT commander_id, name, COALESCE(color_identity, 'C') AS colors FROM commanders ORDER BY name ASC;")
-            return cur.fetchall()
-        except Exception:
-            conn.rollback()
-
-        # 2. Try fetching with 'colors'
-        try:
-            cur.execute("SELECT commander_id, name, COALESCE(colors, 'C') AS colors FROM commanders ORDER BY name ASC;")
-            return cur.fetchall()
-        except Exception:
-            conn.rollback()
-
-        # 3. Try fetching with 'color'
-        try:
-            cur.execute("SELECT commander_id, name, COALESCE(color, 'C') AS colors FROM commanders ORDER BY name ASC;")
-            return cur.fetchall()
-        except Exception:
-            conn.rollback()
-
-        # 4. Fallback: Fetch without color column
-        cur.execute("SELECT commander_id, name, 'C' AS colors FROM commanders ORDER BY name ASC;")
-        return cur.fetchall()
-
+    st.cache_data.clear()
 
 def update_commander_colors(commander_id, clean_colors):
-    """Updates color identity on the commanders table safely across possible column names."""
     with get_db() as conn:
         cur = conn.cursor()
         
-        # Try 'color_identity'
         try:
             cur.execute("UPDATE commanders SET color_identity = %s WHERE commander_id = %s;", (clean_colors, commander_id))
+            st.cache_data.clear()
             return
         except Exception:
             conn.rollback()
 
-        # Try 'colors'
         try:
             cur.execute("UPDATE commanders SET colors = %s WHERE commander_id = %s;", (clean_colors, commander_id))
+            st.cache_data.clear()
             return
         except Exception:
             conn.rollback()
 
-        # Try 'color'
         try:
             cur.execute("UPDATE commanders SET color = %s WHERE commander_id = %s;", (clean_colors, commander_id))
+            st.cache_data.clear()
             return
         except Exception:
             conn.rollback()
 
 def update_deck_details(deck_id, deck_name, owner_id=None, bracket=3, *args, **kwargs):
-    """Updates deck name, owner, and bracket on the decks table cleanly."""
     query = """
         UPDATE decks 
         SET deck_name = %s,
@@ -507,53 +688,22 @@ def update_deck_details(deck_id, deck_name, owner_id=None, bracket=3, *args, **k
     with get_db() as conn:
         cur = conn.cursor()
         cur.execute(query, (deck_name, owner_id, bracket, deck_id))
+    st.cache_data.clear()
 
 def delete_deck(deck_id):
-    """Permanently deletes a deck and its commander associations."""
     with get_db() as conn:
         cur = conn.cursor()
-        # Clean up commander links first if using a bridge table
         cur.execute("DELETE FROM deck_commanders WHERE deck_id = %s;", (deck_id,))
-        # Delete participant references or nullify if necessary, then delete deck
         cur.execute("DELETE FROM game_participants WHERE deck_id = %s;", (deck_id,))
         cur.execute("DELETE FROM decks WHERE deck_id = %s;", (deck_id,))
-
-def fetch_game_participants(game_id):
-    """Fetches seat participants for a game session without fragile SQL JOIN column assumptions."""
-    query = "SELECT * FROM game_participants WHERE game_id = %s;"
-    
-    with get_db() as conn:
-        cur = conn.cursor()
-        try:
-            cur.execute(query, (game_id,))
-            rows = cur.fetchall()
-        except Exception:
-            conn.rollback()
-            # If game_id column is named id or session_id
-            cur.execute("SELECT * FROM game_participants WHERE session_id = %s;", (game_id,))
-            rows = cur.fetchall()
-
-        if not rows:
-            return []
-
-        # Convert to dicts
-        participants = [dict(r) for r in rows]
-        
-        # Sort by seat if column exists, otherwise keep order
-        participants.sort(key=lambda x: x.get('seat_number', x.get('seat_position', x.get('seat', 0))))
-        
-        return participants
+    st.cache_data.clear()
 
 def update_full_game_match(game_id, total_turns, duration_minutes, win_condition, notes, bracket, medium, participants):
-    """
-    Updates game metrics and upserts seat records using PostgreSQL ON CONFLICT DO UPDATE.
-    """
     params_games = (total_turns, duration_minutes, win_condition, notes, bracket, medium, game_id)
     
     with get_db() as conn:
         cur = conn.cursor()
         
-        # 1. Update Game Metrics
         try:
             cur.execute("""
                 UPDATE games 
@@ -576,7 +726,6 @@ def update_full_game_match(game_id, total_turns, duration_minutes, win_condition
                     WHERE id = %s;
                 """, params_games)
 
-        # 2. Upsert Participants using ON CONFLICT on (game_id, player_id)
         for p in participants:
             try:
                 cur.execute("""
@@ -590,177 +739,10 @@ def update_full_game_match(game_id, total_turns, duration_minutes, win_condition
                 """, (game_id, p['player_id'], p['deck_id'], p['mulligan_count'], p['is_winner']))
             except Exception:
                 conn.rollback()
-                # Fallback if constraint key is (game_id, seat_number)
                 cur.execute("""
                     UPDATE game_participants 
                     SET deck_id = %s, mulligan_count = %s, is_winner = %s
                     WHERE game_id = %s AND player_id = %s;
                 """, (p['deck_id'], p['mulligan_count'], p['is_winner'], game_id, p['player_id']))
 
-def get_most_common_deck_bracket():
-    """Calculates the most common deck power bracket across registered decks."""
-    query = """
-        SELECT bracket, COUNT(*) as count 
-        FROM decks 
-        WHERE bracket IS NOT NULL 
-        GROUP BY bracket 
-        ORDER BY count DESC, bracket ASC 
-        LIMIT 1;
-    """
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(query)
-        row = cur.fetchone()
-        if row:
-            return f"Bracket {row['bracket']}", f"{row['count']} decks"
-        return "N/A", ""
-
-def fetch_last_n_games_detailed(limit=2):
-    """Fetches full match details and seat breakdown for the most recent N games."""
-    query_games = """
-        SELECT game_id, total_turns, duration_minutes, win_condition, COALESCE(notes, '') as notes, bracket, medium
-        FROM games
-        ORDER BY game_id DESC
-        LIMIT %s;
-    """
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute(query_games, (limit,))
-        games = cur.fetchall()
-        
-        detailed_games = []
-        for g in games:
-            g_dict = dict(g)
-            g_id = g_dict['game_id']
-            
-            # Fetch participants for this specific game
-            query_participants = """
-                SELECT 
-                    gp.seat_position,
-                    gp.mulligan_count,
-                    gp.is_winner,
-                    p.display_name AS player_name,
-                    d.deck_name,
-                    COALESCE(d.bracket, 3) AS deck_bracket
-                FROM game_participants gp
-                JOIN players p ON gp.player_id = p.player_id
-                JOIN decks d ON gp.deck_id = d.deck_id
-                WHERE gp.game_id = %s
-                ORDER BY gp.seat_position ASC;
-            """
-            cur.execute(query_participants, (g_id,))
-            g_dict['seats'] = cur.fetchall()
-            detailed_games.append(g_dict)
-            
-        return detailed_games
-
-def fetch_games_by_date(selected_date):
-    """Fetches games logged on a specific date in AST timezone directly from played_at."""
-    date_str = str(selected_date)  # e.g. "2026-07-30"
-    
-    # Target played_at with timezone conversion
-    query = """
-        SELECT 
-            g.game_id,
-            g.total_turns,
-            g.win_condition,
-            COALESCE(g.notes, '') AS notes,
-            STRING_AGG(p.display_name, ', ' ORDER BY gp.seat_position) AS participants
-        FROM games g
-        JOIN game_participants gp ON g.game_id = gp.game_id
-        JOIN players p ON gp.player_id = p.player_id
-        WHERE TO_CHAR(g.played_at AT TIME ZONE 'America/Santo_Domingo', 'YYYY-MM-DD') = %s
-        GROUP BY g.game_id, g.total_turns, g.win_condition, g.notes
-        ORDER BY g.game_id DESC;
-    """
-    
-    # Fallback using fixed UTC-4 offset if named timezone fails
-    query_fallback = """
-        SELECT 
-            g.game_id,
-            g.total_turns,
-            g.win_condition,
-            COALESCE(g.notes, '') AS notes,
-            STRING_AGG(p.display_name, ', ' ORDER BY gp.seat_position) AS participants
-        FROM games g
-        JOIN game_participants gp ON g.game_id = gp.game_id
-        JOIN players p ON gp.player_id = p.player_id
-        WHERE TO_CHAR(g.played_at - INTERVAL '4 hours', 'YYYY-MM-DD') = %s
-        GROUP BY g.game_id, g.total_turns, g.win_condition, g.notes
-        ORDER BY g.game_id DESC;
-    """
-    
-    with get_db() as conn:
-        cur = conn.cursor()
-        try:
-            cur.execute(query, (date_str,))
-            return cur.fetchall()
-        except Exception:
-            conn.rollback()
-            cur.execute(query_fallback, (date_str,))
-            return cur.fetchall()
-
-def fetch_daily_session_summary(selected_date):
-    """Aggregates all games, player records, and top performers for a single date in local AST time."""
-    date_str = str(selected_date)
-    
-    with get_db() as conn:
-        cur = conn.cursor()
-        
-        # 1. Overview metrics for the day
-        query_overview = """
-            SELECT 
-                COUNT(DISTINCT g.game_id) AS total_games,
-                ROUND(AVG(g.total_turns), 1) AS avg_turns,
-                ROUND(AVG(g.duration_minutes), 0) AS avg_duration,
-                SUM(g.duration_minutes) AS total_playtime
-            FROM games g
-            WHERE TO_CHAR(g.played_at - INTERVAL '4 hours', 'YYYY-MM-DD') = %s;
-        """
-        cur.execute(query_overview, (date_str,))
-        overview = cur.fetchone()
-        
-        if not overview or overview['total_games'] == 0:
-            return None
-            
-        # 2. Player Performance Breakdown for the day
-        query_players = """
-            SELECT 
-                p.display_name AS player_name,
-                COUNT(gp.game_id) AS games_played,
-                SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END) AS wins,
-                ROUND((SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END)::numeric / COUNT(gp.game_id)) * 100, 1) AS win_rate
-            FROM game_participants gp
-            JOIN games g ON gp.game_id = g.game_id
-            JOIN players p ON gp.player_id = p.player_id
-            WHERE TO_CHAR(g.played_at - INTERVAL '4 hours', 'YYYY-MM-DD') = %s
-            GROUP BY p.player_id, p.display_name
-            ORDER BY wins DESC, games_played ASC;
-        """
-        cur.execute(query_players, (date_str,))
-        players_summary = cur.fetchall()
-        
-        # 3. Deck Performance Breakdown for the day
-        query_decks = """
-            SELECT 
-                d.deck_name,
-                p.display_name AS owner_name,
-                COUNT(gp.game_id) AS games_played,
-                SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END) AS wins,
-                ROUND((SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END)::numeric / COUNT(gp.game_id)) * 100, 1) AS win_rate
-            FROM game_participants gp
-            JOIN games g ON gp.game_id = g.game_id
-            JOIN decks d ON gp.deck_id = d.deck_id
-            JOIN players p ON gp.player_id = p.player_id
-            WHERE TO_CHAR(g.played_at - INTERVAL '4 hours', 'YYYY-MM-DD') = %s
-            GROUP BY d.deck_id, d.deck_name, p.display_name
-            ORDER BY wins DESC, games_played ASC;
-        """
-        cur.execute(query_decks, (date_str,))
-        decks_summary = cur.fetchall()
-        
-        return {
-            "overview": dict(overview),
-            "players": [dict(r) for r in players_summary],
-            "decks": [dict(r) for r in decks_summary]
-        }
+    st.cache_data.clear()

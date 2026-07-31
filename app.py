@@ -96,7 +96,6 @@ if tab_log:
 
         import time
 
-        # Set fragment auto-refresh rate based on whether the timer is running
         refresh_rate = 1 if st.session_state.get("timer_running", False) else None
 
         # --- STREAMLIT FRAGMENT: LIVE GAME COMPANION ---
@@ -172,7 +171,7 @@ if tab_log:
                     
                     sync_companion_to_db()
                     st.toast(f"Pushed {final_minutes} mins and Turn {st.session_state.live_turn_count} to form!", icon="⏱️")
-                    st.rerun()  # Full rerun to push values into the form below
+                    st.rerun()
 
         render_live_companion_fragment()
 
@@ -927,7 +926,7 @@ with tab_stats:
         raw_stats = db.get_player_stats()
         all_decks = db.get_all_deck_performance_stats()
         
-        total_games_played = db.get_total_games_count() if hasattr(db, 'get_total_games_count') else (sum([dict(r)['wins'] for r in raw_stats]) if raw_stats else 0)
+        total_games_played = len(db.fetch_recent_games(limit=1000)) if hasattr(db, 'fetch_recent_games') else (sum([dict(r)['wins'] for r in raw_stats]) if raw_stats else 0)
         total_registered_decks = len(all_decks) if all_decks else 0
         bracket_val, bracket_sub = db.get_most_common_deck_bracket() if hasattr(db, 'get_most_common_deck_bracket') else ("N/A", "")
         
