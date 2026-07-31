@@ -624,7 +624,6 @@ if tab_admin_decks:
                                         target_owner_id = player_dict[new_owner_name]
                                         clean_color_str = ", ".join([c.split()[0] for c in selected_colors])
 
-                                        # Replace the multi-line keyword call with positional arguments:
                                         db.update_deck_details(
                                             selected_deck_id,
                                             new_name.strip(),
