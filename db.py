@@ -6,7 +6,8 @@ from contextlib import contextmanager
 import streamlit as st
 import requests
 import json
-
+import urllib.request
+import re
 
 # 1. Load local .env file if running locally
 load_dotenv()
@@ -600,18 +601,40 @@ def get_or_create_commander(name, color_identity="Unknown"):
             st.cache_data.clear()
             return comm_id
 
-def fetch_moxfield_deck(mox_url):
-    """Extracted Moxfield API fetch logic."""
-    deck_id = mox_url.strip().split('/')[-1]
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "application/json, text/plain, */*",
-        "Referer": "https://www.moxfield.com/"
-    }
-    response = requests.get(f"https://api.moxfield.com/v2/decks/all/{deck_id}", headers=headers)
-    if response.status_code == 200:
-        return response.json()
-    raise Exception(f"Failed to fetch deck from Moxfield (Error {response.status_code})")
+def fetch_moxfield_deck(moxfield_url):
+    """
+    Extracts deck ID from URL and fetches public JSON details from Moxfield API with a custom User-Agent.
+    """
+    # Extract deck ID from standard or clean URLs
+    match = re.search(r'decks/([a-zA-Z0-9_-]+)', moxfield_url)
+    if not match:
+        raise ValueError("Invalid Moxfield URL format. Expected 'https://www.moxfield.com/decks/<deck_id>'")
+    
+    deck_id = match.group(1)
+    api_url = f"https://api.moxfield.com/v2/decks/all/{deck_id}"
+
+    # Pass a standard Browser User-Agent header to avoid HTTP 403 Forbidden
+    req = urllib.request.Request(
+        api_url,
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+    )
+
+    try:
+        with urllib.request.urlopen(req) as response:
+            if response.status == 200:
+                data = json.loads(response.read().decode('utf-8'))
+                return data
+            else:
+                raise Exception(f"Moxfield API returned status code {response.status}")
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            raise Exception("Failed to fetch deck from Moxfield (Error 403). Make sure the deck privacy on Moxfield is set to Public, not Unlisted or Private!")
+        else:
+            raise Exception(f"Failed to fetch deck from Moxfield (HTTP {e.code}: {e.reason})")
+    except Exception as e:
+        raise Exception(f"Failed to fetch deck from Moxfield: {e}")
 
 def add_player(display_name):
     query = "INSERT INTO players (display_name) VALUES (%s) RETURNING player_id;"
