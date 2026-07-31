@@ -8,7 +8,19 @@ active_session_key = st.session_state.get("user_role", "Logger")
 
 POD_KEYS_PREFIXES = ("seat_player_", "seat_borrow_", "seat_deck_borrowed_", "seat_deck_owned_", "seat_mull_", "seat_win_", "input_")
 
-# --- 1. DB HYDRATION (RUNS ONLY ON INITIAL MOUNT / REFRESH) ---
+def sync_field_change():
+    """Package active form keys and push directly to DB draft."""
+    current_draft = {}
+    for k, v in st.session_state.items():
+        if any(k.startswith(prefix) for prefix in POD_KEYS_PREFIXES):
+            if v is not None:
+                current_draft[k] = v
+                
+    st.session_state.saved_pod_state = current_draft
+    if hasattr(db, 'update_live_pod_draft'):
+        db.update_live_pod_draft(active_session_key, current_draft)
+
+# --- 1. DB HYDRATION (RUNS ON MOUNT / REFRESH) ---
 if "form_hydrated_from_db" not in st.session_state:
     db_session = db.fetch_live_session(active_session_key)
     st.session_state.timer_running = db_session["timer_running"]
@@ -33,18 +45,6 @@ if "form_hydrated_from_db" not in st.session_state:
 if "saved_pod_state" not in st.session_state:
     st.session_state.saved_pod_state = {}
 
-def sync_field_change():
-    """Immediately updates local session_state and asynchronously syncs to DB."""
-    current_draft = {}
-    for k, v in st.session_state.items():
-        if any(k.startswith(prefix) for prefix in POD_KEYS_PREFIXES):
-            if v is not None:
-                current_draft[k] = v
-                
-    st.session_state.saved_pod_state = current_draft
-    if hasattr(db, 'update_live_pod_draft'):
-        db.update_live_pod_draft(active_session_key, current_draft)
-
 def sync_companion_to_db():
     db.update_live_session(
         active_session_key,
@@ -55,7 +55,7 @@ def sync_companion_to_db():
     )
 
 def clear_form_selections():
-    """Wipes state locally & updates Supabase to empty dict."""
+    """Thoroughly purges session state & updates Supabase to empty dict."""
     st.session_state.saved_pod_state = {}
     
     if hasattr(db, 'update_live_pod_draft'):
@@ -65,7 +65,7 @@ def clear_form_selections():
     for k in keys_to_clear:
         del st.session_state[k]
 
-# Initialize default fallbacks if missing
+# Default fallback values
 if "input_total_turns" not in st.session_state:
     st.session_state["input_total_turns"] = 8
 if "input_duration" not in st.session_state:
@@ -147,11 +147,11 @@ def render_live_companion_fragment():
             final_minutes = max(1, round(st.session_state.timer_elapsed_seconds / 60))
             final_turns = int(st.session_state.live_turn_count)
             
-            # Explicitly overwrite widget session_state keys
+            # Auto-fill form session state keys
             st.session_state["input_total_turns"] = final_turns
             st.session_state["input_duration"] = final_minutes
             
-            # Save into draft dictionary and sync to DB
+            # Save into draft dictionary & push to DB
             st.session_state.saved_pod_state["input_total_turns"] = final_turns
             st.session_state.saved_pod_state["input_duration"] = final_minutes
             
@@ -159,7 +159,7 @@ def render_live_companion_fragment():
             if hasattr(db, 'update_live_pod_draft'):
                 db.update_live_pod_draft(active_session_key, st.session_state.saved_pod_state)
 
-            st.toast(f"Auto-filled {final_minutes} mins and Turn {final_turns}!", icon="⏱️")
+            st.toast(f"Pushed {final_minutes} mins and Turn {final_turns} to form!", icon="⏱️")
             st.rerun(scope="app")
 
 render_live_companion_fragment()
@@ -189,6 +189,7 @@ else:
             "Total Turns", 
             min_value=1, 
             max_value=50, 
+            value=int(st.session_state.get("input_total_turns", 8)), 
             key="input_total_turns",
             on_change=sync_field_change
         )
@@ -197,14 +198,18 @@ else:
             "Duration (mins)", 
             min_value=1, 
             max_value=500, 
+            value=int(st.session_state.get("input_duration", 45)), 
             key="input_duration",
             on_change=sync_field_change
         )
     with col3:
+        bracket_options = [1, 2, 3, 4, 5]
+        curr_b = int(st.session_state.get("input_bracket", 3))
+        b_idx = bracket_options.index(curr_b) if curr_b in bracket_options else 2
         bracket_level = st.selectbox(
             "Game Bracket", 
-            options=[1, 2, 3, 4, 5], 
-            index=int(st.session_state.get("input_bracket", 3)) - 1, 
+            options=bracket_options, 
+            index=b_idx, 
             key="input_bracket", 
             on_change=sync_field_change
         )
@@ -238,7 +243,7 @@ else:
     col_p1, col_p2 = st.columns([1, 2])
     with col_p1:
         p_num_opt = [3, 4]
-        curr_p_num = st.session_state.get("input_num_players", 4)
+        curr_p_num = int(st.session_state.get("input_num_players", 4))
         p_num_idx = p_num_opt.index(curr_p_num) if curr_p_num in p_num_opt else 1
         num_players = st.selectbox("Number of Players", options=p_num_opt, index=p_num_idx, key="input_num_players", on_change=sync_field_change)
 
