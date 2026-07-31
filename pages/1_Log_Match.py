@@ -6,7 +6,6 @@ st.subheader("⚔️ Live Match Companion & Logger")
 
 active_session_key = st.session_state.get("user_role", "Logger")
 
-# Track keys used by the pod form
 POD_KEYS_PREFIXES = ("seat_player_", "seat_borrow_", "seat_deck_borrowed_", "seat_deck_owned_", "seat_mull_", "seat_win_", "input_")
 
 def sync_field_change():
@@ -33,10 +32,9 @@ if "session_loaded_from_db" not in st.session_state:
     db_draft = db.fetch_live_pod_draft(active_session_key) if hasattr(db, 'fetch_live_pod_draft') else {}
     st.session_state.saved_pod_state = db_draft
     
-    # Hydrate widget keys into session state
+    # Hydrate widget keys directly into session state
     for k, v in db_draft.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
+        st.session_state[k] = v
             
     st.session_state.session_loaded_from_db = True
 
@@ -197,14 +195,21 @@ else:
             key="input_duration"
         )
     with col3:
-        bracket_level = st.selectbox("Game Bracket", options=[1, 2, 3, 4, 5], index=2, key="input_bracket", on_change=sync_field_change)
+        bracket_level = st.selectbox("Game Bracket", options=[1, 2, 3, 4, 5], index=st.session_state.get("input_bracket", 3) - 1, key="input_bracket", on_change=sync_field_change)
     with col4:
-        game_medium = st.selectbox("Platform / Medium", options=["In Person 🃏", "Convoke 💻", "SpellTable 📹"], index=0, key="input_medium", on_change=sync_field_change)
+        medium_options = ["In Person 🃏", "Convoke 💻", "SpellTable 📹"]
+        curr_m = st.session_state.get("input_medium", "In Person 🃏")
+        m_idx = medium_options.index(curr_m) if curr_m in medium_options else 0
+        game_medium = st.selectbox("Platform / Medium", options=medium_options, index=m_idx, key="input_medium", on_change=sync_field_change)
 
+    win_options = ["Combat Damage", "Infinite Combo", "Alternate Win-Con", "Commander Damage", "Scoop / Surrender"]
+    curr_w = st.session_state.get("input_win_condition")
+    w_idx = win_options.index(curr_w) if curr_w in win_options else None
+    
     win_condition = st.selectbox(
         "Win Condition",
-        ["Combat Damage", "Infinite Combo", "Alternate Win-Con", "Commander Damage", "Scoop / Surrender"],
-        index=None,
+        win_options,
+        index=w_idx,
         placeholder="How did it end?",
         key="input_win_condition",
         on_change=sync_field_change
@@ -214,7 +219,10 @@ else:
     
     col_p1, col_p2 = st.columns([1, 2])
     with col_p1:
-        num_players = st.selectbox("Number of Players", options=[3, 4], index=1, key="input_num_players", on_change=sync_field_change)
+        p_num_opt = [3, 4]
+        curr_p_num = st.session_state.get("input_num_players", 4)
+        p_num_idx = p_num_opt.index(curr_p_num) if curr_p_num in p_num_opt else 1
+        num_players = st.selectbox("Number of Players", options=p_num_opt, index=p_num_idx, key="input_num_players", on_change=sync_field_change)
 
     st.subheader("Participants")
     participants_input = []
@@ -228,20 +236,23 @@ else:
         wk = f"seat_win_{seat}"
 
         saved_p_val = st.session_state.get(pk, None)
+        p_idx = player_names.index(saved_p_val) if saved_p_val in player_names else None
         header_text = f"👤 Seat {seat}" + (f": {saved_p_val}" if saved_p_val else "")
 
         with st.expander(header_text, expanded=True):
             selected_player_name = st.selectbox(
                 "Player", 
                 player_names, 
-                index=None, 
+                index=p_idx, 
                 placeholder="Select player...", 
                 key=pk,
                 on_change=sync_field_change
             )
             
+            saved_b_val = bool(st.session_state.get(bk, False))
             is_borrowing = st.checkbox(
                 "🎁 Borrowing a deck from someone else?", 
+                value=saved_b_val,
                 key=bk,
                 on_change=sync_field_change
             )
@@ -255,11 +266,13 @@ else:
                     if all_global_decks:
                         global_deck_dict = {f"{d['deck_name']} (Owner: {d['owner_name']})": d['deck_id'] for d in all_global_decks}
                         g_keys = list(global_deck_dict.keys())
+                        saved_bd_val = st.session_state.get(bdk, None)
+                        bd_idx = g_keys.index(saved_bd_val) if saved_bd_val in g_keys else None
 
                         selected_deck_label = st.selectbox(
                             "Select Borrowed Deck", 
                             g_keys, 
-                            index=None, 
+                            index=bd_idx, 
                             placeholder="Select borrowed deck...", 
                             key=bdk,
                             on_change=sync_field_change
@@ -273,11 +286,13 @@ else:
                     if available_decks:
                         deck_dict = {f"{d['deck_name']} (⚡ Bracket {d.get('bracket', 3)})": d['deck_id'] for d in available_decks}
                         d_keys = list(deck_dict.keys())
+                        saved_od_val = st.session_state.get(odk, None)
+                        od_idx = d_keys.index(saved_od_val) if saved_od_val in d_keys else None
 
                         selected_deck_name = st.selectbox(
                             "Deck", 
                             d_keys, 
-                            index=None, 
+                            index=od_idx, 
                             placeholder="Select deck...", 
                             key=odk,
                             on_change=sync_field_change
@@ -291,9 +306,11 @@ else:
 
             col_mull, col_win = st.columns(2)
             with col_mull:
-                mulligans = st.number_input("Mulligans", 0, 7, key=mk, on_change=sync_field_change)
+                saved_mull = int(st.session_state.get(mk, 0))
+                mulligans = st.number_input("Mulligans", 0, 7, value=saved_mull, key=mk, on_change=sync_field_change)
             with col_win:
-                is_winner = st.checkbox("Winner 🏆", key=wk, on_change=sync_field_change)
+                saved_win = bool(st.session_state.get(wk, False))
+                is_winner = st.checkbox("Winner 🏆", value=saved_win, key=wk, on_change=sync_field_change)
 
             participants_input.append({
                 "seat_position": seat,
