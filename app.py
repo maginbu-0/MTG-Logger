@@ -96,11 +96,31 @@ if tab_log:
 
         import time
 
-# Ensure default session state values exist before rendering inputs
+# Ensure session state defaults exist
         if "input_total_turns" not in st.session_state:
             st.session_state["input_total_turns"] = 8
         if "input_duration" not in st.session_state:
             st.session_state["input_duration"] = 45
+
+        # Callback function triggered reliably on Mobile & Desktop touch/click
+        def end_match_callback():
+            current_elapsed = st.session_state.get("timer_elapsed_seconds", 0)
+            if st.session_state.get("timer_running", False) and st.session_state.get("timer_start_time") is not None:
+                current_elapsed += int(time.time() - st.session_state.timer_start_time)
+
+            final_minutes = max(1, round(current_elapsed / 60))
+            
+            # Freeze and reset active timer states
+            st.session_state.timer_running = False
+            st.session_state.timer_elapsed_seconds = current_elapsed
+            st.session_state.timer_start_time = None
+            
+            # Explicitly push values to form inputs
+            st.session_state["input_total_turns"] = int(st.session_state.get("live_turn_count", 1))
+            st.session_state["input_duration"] = int(final_minutes)
+            
+            # Sync to database
+            sync_companion_to_db()
 
         # --- STREAMLIT FRAGMENT: LIVE GAME COMPANION ---
         @st.fragment(run_every=1)
@@ -109,6 +129,7 @@ if tab_log:
             if st.session_state.get("timer_running", False) and st.session_state.get("timer_start_time") is not None:
                 current_elapsed += int(time.time() - st.session_state.timer_start_time)
 
+            # Throttled Background DB Sync: Flush to DB every 15s automatically
             last_sync = st.session_state.get("last_db_sync_time", 0)
             if st.session_state.get("timer_running", False) and (time.time() - last_sync > 15):
                 st.session_state.last_db_sync_time = time.time()
@@ -169,21 +190,14 @@ if tab_log:
 
                 st.divider()
                 
-                if st.button("🏁 End Match & Auto-Fill Form", type="primary", use_container_width=True, key="btn_end_match"):
-                    if st.session_state.get("timer_running", False) and st.session_state.get("timer_start_time") is not None:
-                        st.session_state.timer_elapsed_seconds += int(time.time() - st.session_state.timer_start_time)
-                        st.session_state.timer_running = False
-                        st.session_state.timer_start_time = None
-                    
-                    final_minutes = max(1, round(st.session_state.timer_elapsed_seconds / 60))
-                    
-                    # Force update the exact keys bound to the widgets
-                    st.session_state["input_total_turns"] = int(st.session_state.live_turn_count)
-                    st.session_state["input_duration"] = int(final_minutes)
-                    
-                    sync_companion_to_db()
-                    st.toast(f"Pushed {final_minutes} mins and Turn {st.session_state.live_turn_count} to form!", icon="⏱️")
-                    st.rerun()  # Trigger full app rerun to re-render form inputs with new values
+                # Using on_click callback guarantees mobile browsers register the tap instantly
+                st.button(
+                    "🏁 End Match & Auto-Fill Form", 
+                    type="primary", 
+                    use_container_width=True, 
+                    key="btn_end_match",
+                    on_click=end_match_callback
+                )
 
         render_live_companion_fragment()
 
