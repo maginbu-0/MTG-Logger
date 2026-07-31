@@ -96,8 +96,11 @@ if tab_log:
 
         import time
 
-        # FRAGMENT 1: LIVE GAME COMPANION
-        @st.fragment
+        # Set fragment auto-refresh rate based on whether the timer is running
+        refresh_rate = 1 if st.session_state.get("timer_running", False) else None
+
+        # --- STREAMLIT FRAGMENT: LIVE GAME COMPANION ---
+        @st.fragment(run_every=refresh_rate)
         def render_live_companion_fragment():
             current_elapsed = st.session_state.timer_elapsed_seconds
             if st.session_state.timer_running and st.session_state.timer_start_time is not None:
@@ -120,14 +123,14 @@ if tab_log:
                                 st.session_state.timer_running = True
                                 st.session_state.timer_start_time = time.time()
                                 sync_companion_to_db()
-                                st.rerun()
+                                st.rerun(scope="fragment")
                         else:
                             if st.button("⏸️ Pause", use_container_width=True, key="btn_timer_pause"):
                                 st.session_state.timer_running = False
                                 st.session_state.timer_elapsed_seconds = current_elapsed
                                 st.session_state.timer_start_time = None
                                 sync_companion_to_db()
-                                st.rerun()
+                                st.rerun(scope="fragment")
                     
                     with t_col2:
                         if st.button("🔄 Reset Timer", use_container_width=True, key="btn_timer_reset"):
@@ -136,7 +139,7 @@ if tab_log:
                             st.session_state.timer_elapsed_seconds = 0
                             st.session_state.live_turn_count = 1
                             sync_companion_to_db()
-                            st.rerun()
+                            st.rerun(scope="fragment")
 
                 with col_turns:
                     st.markdown("#### 🔄 Turn Counter")
@@ -148,12 +151,12 @@ if tab_log:
                             if st.session_state.live_turn_count > 1:
                                 st.session_state.live_turn_count -= 1
                                 sync_companion_to_db()
-                                st.rerun()
+                                st.rerun(scope="fragment")
                     with turn_col2:
                         if st.button("➕ Next Turn", type="primary", use_container_width=True, key="btn_add_turn"):
                             st.session_state.live_turn_count += 1
                             sync_companion_to_db()
-                            st.rerun()
+                            st.rerun(scope="fragment")
 
                 st.divider()
                 
@@ -169,7 +172,7 @@ if tab_log:
                     
                     sync_companion_to_db()
                     st.toast(f"Pushed {final_minutes} mins and Turn {st.session_state.live_turn_count} to form!", icon="⏱️")
-                    st.rerun()
+                    st.rerun()  # Full rerun to push values into the form below
 
         render_live_companion_fragment()
 
