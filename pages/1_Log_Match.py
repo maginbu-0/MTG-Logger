@@ -65,6 +65,7 @@ def clear_form_selections():
     for k in keys_to_clear:
         del st.session_state[k]
 
+# Initialize default fallbacks if missing
 if "input_total_turns" not in st.session_state:
     st.session_state["input_total_turns"] = 8
 if "input_duration" not in st.session_state:
@@ -144,17 +145,21 @@ def render_live_companion_fragment():
                 st.session_state.timer_start_time = None
             
             final_minutes = max(1, round(st.session_state.timer_elapsed_seconds / 60))
+            final_turns = int(st.session_state.live_turn_count)
             
-            st.session_state["input_total_turns"] = int(st.session_state.live_turn_count)
-            st.session_state["input_duration"] = int(final_minutes)
-            st.session_state.saved_pod_state["input_total_turns"] = int(st.session_state.live_turn_count)
-            st.session_state.saved_pod_state["input_duration"] = int(final_minutes)
+            # Explicitly overwrite widget session_state keys
+            st.session_state["input_total_turns"] = final_turns
+            st.session_state["input_duration"] = final_minutes
+            
+            # Save into draft dictionary and sync to DB
+            st.session_state.saved_pod_state["input_total_turns"] = final_turns
+            st.session_state.saved_pod_state["input_duration"] = final_minutes
             
             sync_companion_to_db()
             if hasattr(db, 'update_live_pod_draft'):
                 db.update_live_pod_draft(active_session_key, st.session_state.saved_pod_state)
 
-            st.toast(f"Pushed {final_minutes} mins and Turn {st.session_state.live_turn_count} to form!", icon="⏱️")
+            st.toast(f"Auto-filled {final_minutes} mins and Turn {final_turns}!", icon="⏱️")
             st.rerun(scope="app")
 
 render_live_companion_fragment()
@@ -184,7 +189,6 @@ else:
             "Total Turns", 
             min_value=1, 
             max_value=50, 
-            value=int(st.session_state.get("input_total_turns", 8)), 
             key="input_total_turns",
             on_change=sync_field_change
         )
@@ -193,7 +197,6 @@ else:
             "Duration (mins)", 
             min_value=1, 
             max_value=500, 
-            value=int(st.session_state.get("input_duration", 45)), 
             key="input_duration",
             on_change=sync_field_change
         )
