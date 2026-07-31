@@ -95,79 +95,86 @@ if tab_log:
             )
 
         import time
-        current_elapsed = st.session_state.timer_elapsed_seconds
-        if st.session_state.timer_running and st.session_state.timer_start_time is not None:
-            current_elapsed += int(time.time() - st.session_state.timer_start_time)
 
-        with st.expander(f"⏱️ Live Game Companion ({active_session_key} Pod)", expanded=True):
-            col_timer, col_turns = st.columns(2)
-            
-            with col_timer:
-                st.markdown("#### ⏳ Match Timer")
-                mins, secs = divmod(current_elapsed, 60)
-                hrs, mins = divmod(mins, 60)
-                time_str = f"{hrs:02d}:{mins:02d}:{secs:02d}" if hrs > 0 else f"{mins:02d}:{secs:02d}"
+        # --- STREAMLIT FRAGMENT: LIVE GAME COMPANION ---
+        @st.fragment
+        def render_live_companion_fragment():
+            current_elapsed = st.session_state.timer_elapsed_seconds
+            if st.session_state.timer_running and st.session_state.timer_start_time is not None:
+                current_elapsed += int(time.time() - st.session_state.timer_start_time)
+
+            with st.expander(f"⏱️ Live Game Companion ({active_session_key} Pod)", expanded=True):
+                col_timer, col_turns = st.columns(2)
                 
-                st.markdown(f"<h2 style='text-align: center; margin: 0; color: #ff4b4b;'>{time_str}</h2>", unsafe_allow_html=True)
-                
-                t_col1, t_col2 = st.columns(2)
-                with t_col1:
-                    if not st.session_state.timer_running:
-                        if st.button("▶️ Start / Resume", use_container_width=True, key="btn_timer_start"):
-                            st.session_state.timer_running = True
-                            st.session_state.timer_start_time = time.time()
-                            sync_companion_to_db()
-                            st.rerun()
-                    else:
-                        if st.button("⏸️ Pause", use_container_width=True, key="btn_timer_pause"):
+                with col_timer:
+                    st.markdown("#### ⏳ Match Timer")
+                    mins, secs = divmod(current_elapsed, 60)
+                    hrs, mins = divmod(mins, 60)
+                    time_str = f"{hrs:02d}:{mins:02d}:{secs:02d}" if hrs > 0 else f"{mins:02d}:{secs:02d}"
+                    
+                    st.markdown(f"<h2 style='text-align: center; margin: 0; color: #ff4b4b;'>{time_str}</h2>", unsafe_allow_html=True)
+                    
+                    t_col1, t_col2 = st.columns(2)
+                    with t_col1:
+                        if not st.session_state.timer_running:
+                            if st.button("▶️ Start / Resume", use_container_width=True, key="btn_timer_start"):
+                                st.session_state.timer_running = True
+                                st.session_state.timer_start_time = time.time()
+                                sync_companion_to_db()
+                                st.rerun(scope="fragment")
+                        else:
+                            if st.button("⏸️ Pause", use_container_width=True, key="btn_timer_pause"):
+                                st.session_state.timer_running = False
+                                st.session_state.timer_elapsed_seconds = current_elapsed
+                                st.session_state.timer_start_time = None
+                                sync_companion_to_db()
+                                st.rerun(scope="fragment")
+                    
+                    with t_col2:
+                        if st.button("🔄 Reset Timer", use_container_width=True, key="btn_timer_reset"):
                             st.session_state.timer_running = False
-                            st.session_state.timer_elapsed_seconds = current_elapsed
                             st.session_state.timer_start_time = None
+                            st.session_state.timer_elapsed_seconds = 0
+                            st.session_state.live_turn_count = 1
                             sync_companion_to_db()
-                            st.rerun()
+                            st.rerun(scope="fragment")
+
+                with col_turns:
+                    st.markdown("#### 🔄 Turn Counter")
+                    st.markdown(f"<h2 style='text-align: center; margin: 0;'>Turn {st.session_state.live_turn_count}</h2>", unsafe_allow_html=True)
+                    
+                    turn_col1, turn_col2 = st.columns(2)
+                    with turn_col1:
+                        if st.button("➖ Turn", use_container_width=True, key="btn_sub_turn"):
+                            if st.session_state.live_turn_count > 1:
+                                st.session_state.live_turn_count -= 1
+                                sync_companion_to_db()
+                                st.rerun(scope="fragment")
+                    with turn_col2:
+                        if st.button("➕ Next Turn", type="primary", use_container_width=True, key="btn_add_turn"):
+                            st.session_state.live_turn_count += 1
+                            sync_companion_to_db()
+                            st.rerun(scope="fragment")
+
+                st.divider()
                 
-                with t_col2:
-                    if st.button("🔄 Reset Timer", use_container_width=True, key="btn_timer_reset"):
+                if st.button("🏁 End Match & Auto-Fill Form", type="primary", use_container_width=True, key="btn_end_match"):
+                    if st.session_state.timer_running and st.session_state.timer_start_time is not None:
+                        st.session_state.timer_elapsed_seconds += int(time.time() - st.session_state.timer_start_time)
                         st.session_state.timer_running = False
                         st.session_state.timer_start_time = None
-                        st.session_state.timer_elapsed_seconds = 0
-                        st.session_state.live_turn_count = 1
-                        sync_companion_to_db()
-                        st.rerun()
+                    
+                    final_minutes = max(1, round(st.session_state.timer_elapsed_seconds / 60))
+                    
+                    st.session_state["input_total_turns"] = int(st.session_state.live_turn_count)
+                    st.session_state["input_duration"] = int(final_minutes)
+                    
+                    sync_companion_to_db()
+                    st.toast(f"Pushed {final_minutes} mins and Turn {st.session_state.live_turn_count} to form!", icon="⏱️")
+                    st.rerun()
 
-            with col_turns:
-                st.markdown("#### 🔄 Turn Counter")
-                st.markdown(f"<h2 style='text-align: center; margin: 0;'>Turn {st.session_state.live_turn_count}</h2>", unsafe_allow_html=True)
-                
-                turn_col1, turn_col2 = st.columns(2)
-                with turn_col1:
-                    if st.button("➖ Turn", use_container_width=True, key="btn_sub_turn"):
-                        if st.session_state.live_turn_count > 1:
-                            st.session_state.live_turn_count -= 1
-                            sync_companion_to_db()
-                            st.rerun()
-                with turn_col2:
-                    if st.button("➕ Next Turn", type="primary", use_container_width=True, key="btn_add_turn"):
-                        st.session_state.live_turn_count += 1
-                        sync_companion_to_db()
-                        st.rerun()
-
-            st.divider()
-            
-            if st.button("🏁 End Match & Auto-Fill Form", type="primary", use_container_width=True, key="btn_end_match"):
-                if st.session_state.timer_running and st.session_state.timer_start_time is not None:
-                    st.session_state.timer_elapsed_seconds += int(time.time() - st.session_state.timer_start_time)
-                    st.session_state.timer_running = False
-                    st.session_state.timer_start_time = None
-                
-                final_minutes = max(1, round(st.session_state.timer_elapsed_seconds / 60))
-                
-                st.session_state["input_total_turns"] = int(st.session_state.live_turn_count)
-                st.session_state["input_duration"] = int(final_minutes)
-                
-                sync_companion_to_db()
-                st.toast(f"Pushed {final_minutes} mins and Turn {st.session_state.live_turn_count} to form!", icon="⏱️")
-                st.rerun()
+        # Render companion fragment
+        render_live_companion_fragment()
 
         st.subheader("Match Details")
 
@@ -533,7 +540,7 @@ if tab_admin_decks:
                     else:
                         st.info("This player has no registered decks.")
 
-        # 3. DIRECT COMMANDER COLOR IDENTITY EDITOR (NEW SEPARATE EXPANDER)
+        # 3. DIRECT COMMANDER COLOR IDENTITY EDITOR
         with st.expander("🎨 Edit Commander Color Identity", expanded=False):
             st.markdown("Select a specific Commander card to directly edit its WUBRG color identity:")
             
