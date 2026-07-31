@@ -28,17 +28,14 @@ if "form_hydrated_from_db" not in st.session_state:
     st.session_state.timer_elapsed_seconds = db_session["timer_elapsed_seconds"]
     st.session_state.live_turn_count = db_session["live_turn_count"]
 
-    # Fetch draft from DB strictly ONCE
     db_draft = db.fetch_live_pod_draft(active_session_key) if hasattr(db, 'fetch_live_pod_draft') else {}
     if not isinstance(db_draft, dict):
         db_draft = {}
 
     st.session_state.saved_pod_state = db_draft
 
-    # Pre-populate active keys into session_state
     for k, v in db_draft.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
+        st.session_state[k] = v
 
     st.session_state.form_hydrated_from_db = True
 
@@ -55,17 +52,30 @@ def sync_companion_to_db():
     )
 
 def clear_form_selections():
-    """Thoroughly purges session state & updates Supabase to empty dict."""
+    """Wipes session state and pushes empty dict to DB."""
     st.session_state.saved_pod_state = {}
     
     if hasattr(db, 'update_live_pod_draft'):
         db.update_live_pod_draft(active_session_key, {})
         
-    keys_to_clear = [k for k in st.session_state.keys() if any(k.startswith(prefix) for prefix in POD_KEYS_PREFIXES)]
-    for k in keys_to_clear:
-        del st.session_state[k]
+    # Reset widget keys explicitly to None/defaults instead of deleting
+    st.session_state["input_win_condition"] = None
+    st.session_state["input_match_notes"] = ""
+    st.session_state["input_total_turns"] = 8
+    st.session_state["input_duration"] = 45
+    st.session_state["input_bracket"] = 3
+    st.session_state["input_medium"] = "In Person 🃏"
+    st.session_state["input_num_players"] = 4
 
-# Default fallback values
+    for seat in range(1, 5):
+        st.session_state[f"seat_player_{seat}"] = None
+        st.session_state[f"seat_borrow_{seat}"] = False
+        st.session_state[f"seat_deck_borrowed_{seat}"] = None
+        st.session_state[f"seat_deck_owned_{seat}"] = None
+        st.session_state[f"seat_mull_{seat}"] = 0
+        st.session_state[f"seat_win_{seat}"] = False
+
+# Default fallbacks
 if "input_total_turns" not in st.session_state:
     st.session_state["input_total_turns"] = 8
 if "input_duration" not in st.session_state:
@@ -147,11 +157,8 @@ def render_live_companion_fragment():
             final_minutes = max(1, round(st.session_state.timer_elapsed_seconds / 60))
             final_turns = int(st.session_state.live_turn_count)
             
-            # Auto-fill form session state keys
             st.session_state["input_total_turns"] = final_turns
             st.session_state["input_duration"] = final_minutes
-            
-            # Save into draft dictionary & push to DB
             st.session_state.saved_pod_state["input_total_turns"] = final_turns
             st.session_state.saved_pod_state["input_duration"] = final_minutes
             
@@ -392,7 +399,7 @@ else:
                     keys_to_reset.extend([f"seat_mull_{seat}", f"seat_win_{seat}"])
                 for k in keys_to_reset:
                     if k in st.session_state:
-                        del st.session_state[k]
+                        st.session_state[k] = None if "win" in k or "notes" in k else 0
                     if k in st.session_state.saved_pod_state:
                         del st.session_state.saved_pod_state[k]
                 
