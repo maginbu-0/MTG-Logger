@@ -9,7 +9,7 @@ active_session_key = st.session_state.get("user_role", "Logger")
 POD_KEYS_PREFIXES = ("seat_player_", "seat_borrow_", "seat_deck_borrowed_", "seat_deck_owned_", "seat_mull_", "seat_win_", "input_")
 
 def sync_field_change():
-    """Immediately packages all active form keys and pushes directly to DB."""
+    """Package active form keys and push directly to DB."""
     current_draft = {}
     for k, v in st.session_state.items():
         if any(k.startswith(prefix) for prefix in POD_KEYS_PREFIXES):
@@ -20,26 +20,25 @@ def sync_field_change():
     if hasattr(db, 'update_live_pod_draft'):
         db.update_live_pod_draft(active_session_key, current_draft)
 
-# --- 1. INITIALIZE DB STATE & RESTORE POD DRAFT ---
-if "session_loaded_from_db" not in st.session_state:
-    db_session = db.fetch_live_session(active_session_key)
+# --- ALWAYS LOAD/RESTORE DRAFT FROM DB ON PAGE MOUNT ---
+db_session = db.fetch_live_session(active_session_key)
+if "timer_running" not in st.session_state:
     st.session_state.timer_running = db_session["timer_running"]
     st.session_state.timer_start_time = db_session["timer_start_time"]
     st.session_state.timer_elapsed_seconds = db_session["timer_elapsed_seconds"]
     st.session_state.live_turn_count = db_session["live_turn_count"]
-    
-    # Restore saved pod draft from DB on initial mount / page refresh
-    db_draft = db.fetch_live_pod_draft(active_session_key) if hasattr(db, 'fetch_live_pod_draft') else {}
-    st.session_state.saved_pod_state = db_draft
-    
-    # Hydrate widget keys directly into session state
-    for k, v in db_draft.items():
-        st.session_state[k] = v
-            
-    st.session_state.session_loaded_from_db = True
 
-if "saved_pod_state" not in st.session_state:
-    st.session_state.saved_pod_state = {}
+# Fetch draft from DB
+db_draft = db.fetch_live_pod_draft(active_session_key) if hasattr(db, 'fetch_live_pod_draft') else {}
+if not isinstance(db_draft, dict):
+    db_draft = {}
+
+# Force hydrate DB draft values back into st.session_state on every page render
+for k, v in db_draft.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
+
+st.session_state.saved_pod_state = db_draft
 
 def sync_companion_to_db():
     db.update_live_session(
@@ -195,7 +194,7 @@ else:
             key="input_duration"
         )
     with col3:
-        bracket_level = st.selectbox("Game Bracket", options=[1, 2, 3, 4, 5], index=st.session_state.get("input_bracket", 3) - 1, key="input_bracket", on_change=sync_field_change)
+        bracket_level = st.selectbox("Game Bracket", options=[1, 2, 3, 4, 5], index=int(st.session_state.get("input_bracket", 3)) - 1, key="input_bracket", on_change=sync_field_change)
     with col4:
         medium_options = ["In Person 🃏", "Convoke 💻", "SpellTable 📹"]
         curr_m = st.session_state.get("input_medium", "In Person 🃏")
