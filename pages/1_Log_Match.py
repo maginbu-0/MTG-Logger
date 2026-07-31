@@ -9,7 +9,7 @@ active_session_key = st.session_state.get("user_role", "Logger")
 POD_KEYS_PREFIXES = ("seat_player_", "seat_borrow_", "seat_deck_borrowed_", "seat_deck_owned_", "seat_mull_", "seat_win_", "input_")
 
 def sync_field_change():
-    """Package active form keys and push directly to DB."""
+    """Package active form keys and push directly to DB draft."""
     current_draft = {}
     for k, v in st.session_state.items():
         if any(k.startswith(prefix) for prefix in POD_KEYS_PREFIXES):
@@ -20,7 +20,7 @@ def sync_field_change():
     if hasattr(db, 'update_live_pod_draft'):
         db.update_live_pod_draft(active_session_key, current_draft)
 
-# --- ALWAYS LOAD/RESTORE DRAFT FROM DB ON PAGE MOUNT ---
+# --- 1. DB HYDRATION & PERSISTENCE ---
 db_session = db.fetch_live_session(active_session_key)
 if "timer_running" not in st.session_state:
     st.session_state.timer_running = db_session["timer_running"]
@@ -33,7 +33,7 @@ db_draft = db.fetch_live_pod_draft(active_session_key) if hasattr(db, 'fetch_liv
 if not isinstance(db_draft, dict):
     db_draft = {}
 
-# Force hydrate DB draft values back into st.session_state on every page render
+# Hydrate stored DB draft values into session state if not already set
 for k, v in db_draft.items():
     if k not in st.session_state:
         st.session_state[k] = v
@@ -50,23 +50,16 @@ def sync_companion_to_db():
     )
 
 def clear_form_selections():
+    """Thoroughly purges session state & updates Supabase to empty JSON."""
     st.session_state.saved_pod_state = {}
+    
+    # Update DB first so re-runs don't pull old state back
     if hasattr(db, 'update_live_pod_draft'):
         db.update_live_pod_draft(active_session_key, {})
         
-    keys_to_clear = ["input_win_condition", "input_match_notes", "input_num_players"]
-    for seat in range(1, 5):
-        keys_to_clear.extend([
-            f"seat_player_{seat}",
-            f"seat_borrow_{seat}",
-            f"seat_deck_borrowed_{seat}",
-            f"seat_deck_owned_{seat}",
-            f"seat_mull_{seat}",
-            f"seat_win_{seat}"
-        ])
+    keys_to_clear = [k for k in st.session_state.keys() if any(k.startswith(prefix) for prefix in POD_KEYS_PREFIXES)]
     for k in keys_to_clear:
-        if k in st.session_state:
-            del st.session_state[k]
+        del st.session_state[k]
 
 if "input_total_turns" not in st.session_state:
     st.session_state["input_total_turns"] = 8
@@ -151,9 +144,16 @@ def render_live_companion_fragment():
             st.session_state["input_total_turns"] = int(st.session_state.live_turn_count)
             st.session_state["input_duration"] = int(final_minutes)
             
+            # Save turns & duration into draft state & DB as well
+            st.session_state.saved_pod_state["input_total_turns"] = int(st.session_state.live_turn_count)
+            st.session_state.saved_pod_state["input_duration"] = int(final_minutes)
+            
             sync_companion_to_db()
+            if hasattr(db, 'update_live_pod_draft'):
+                db.update_live_pod_draft(active_session_key, st.session_state.saved_pod_state)
+
             st.toast(f"Pushed {final_minutes} mins and Turn {st.session_state.live_turn_count} to form!", icon="⏱️")
-            st.rerun()
+            st.rerun(scope="app")
 
 render_live_companion_fragment()
 
@@ -183,7 +183,8 @@ else:
             min_value=1, 
             max_value=50, 
             value=int(st.session_state.get("input_total_turns", 8)), 
-            key="input_total_turns"
+            key="input_total_turns",
+            on_change=sync_field_change
         )
     with col2:
         duration = st.number_input(
@@ -191,15 +192,28 @@ else:
             min_value=1, 
             max_value=500, 
             value=int(st.session_state.get("input_duration", 45)), 
-            key="input_duration"
+            key="input_duration",
+            on_change=sync_field_change
         )
     with col3:
-        bracket_level = st.selectbox("Game Bracket", options=[1, 2, 3, 4, 5], index=int(st.session_state.get("input_bracket", 3)) - 1, key="input_bracket", on_change=sync_field_change)
+        bracket_level = st.selectbox(
+            "Game Bracket", 
+            options=[1, 2, 3, 4, 5], 
+            index=int(st.session_state.get("input_bracket", 3)) - 1, 
+            key="input_bracket", 
+            on_change=sync_field_change
+        )
     with col4:
         medium_options = ["In Person 🃏", "Convoke 💻", "SpellTable 📹"]
         curr_m = st.session_state.get("input_medium", "In Person 🃏")
         m_idx = medium_options.index(curr_m) if curr_m in medium_options else 0
-        game_medium = st.selectbox("Platform / Medium", options=medium_options, index=m_idx, key="input_medium", on_change=sync_field_change)
+        game_medium = st.selectbox(
+            "Platform / Medium", 
+            options=medium_options, 
+            index=m_idx, 
+            key="input_medium", 
+            on_change=sync_field_change
+        )
 
     win_options = ["Combat Damage", "Infinite Combo", "Alternate Win-Con", "Commander Damage", "Scoop / Surrender"]
     curr_w = st.session_state.get("input_win_condition")
@@ -360,6 +374,7 @@ else:
             if submit_match:
                 clear_form_selections()
                 st.toast("Game logged & form cleared!", icon="🧹")
+                st.rerun()
 
             elif rematch_submit:
                 keys_to_reset = ["input_win_condition", "input_match_notes"]
@@ -375,5 +390,4 @@ else:
                     db.update_live_pod_draft(active_session_key, st.session_state.saved_pod_state)
 
                 st.toast("Game logged! Ready for Rematch with same pod & decks!", icon="🔁")
-
-            st.rerun()
+                st.rerun()
