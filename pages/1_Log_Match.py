@@ -6,7 +6,6 @@ st.subheader("⚔️ Live Match Companion & Logger")
 
 active_session_key = st.session_state.get("user_role", "Logger")
 
-# Track form key version to force clean widget re-renders when needed
 if "form_v" not in st.session_state:
     st.session_state.form_v = 0
 
@@ -18,7 +17,6 @@ if "timer_running" not in st.session_state:
     st.session_state.timer_elapsed_seconds = db_session["timer_elapsed_seconds"]
     st.session_state.live_turn_count = db_session["live_turn_count"]
 
-    # Restore draft choices from Supabase ONCE
     db_draft = db.fetch_live_pod_draft(active_session_key) if hasattr(db, 'fetch_live_pod_draft') else {}
     if isinstance(db_draft, dict):
         for k, v in db_draft.items():
@@ -34,11 +32,39 @@ def sync_companion_to_db():
     )
 
 def save_current_draft_to_db():
-    """Background helper to save current draft without blocking execution."""
+    if st.session_state.get("skip_draft_save", False):
+        return
     if hasattr(db, 'update_live_pod_draft'):
         POD_KEYS_PREFIXES = ("seat_player_", "seat_borrow_", "seat_deck_borrowed_", "seat_deck_owned_", "seat_mull_", "seat_win_", "input_")
         draft = {k: v for k, v in st.session_state.items() if any(k.startswith(p) for p in POD_KEYS_PREFIXES) and v is not None}
         db.update_live_pod_draft(active_session_key, draft)
+
+def clear_form_selections():
+    """Completely wipes session state keys & clears Supabase."""
+    st.session_state.saved_pod_state = {}
+    st.session_state.skip_draft_save = True
+    
+    if hasattr(db, 'update_live_pod_draft'):
+        db.update_live_pod_draft(active_session_key, {})
+    
+    st.session_state.input_total_turns = 8
+    st.session_state.input_duration = 45
+    st.session_state.input_win_condition = None
+    st.session_state.input_match_notes = ""
+    st.session_state.input_bracket = 3
+    st.session_state.input_medium = "In Person 🃏"
+    st.session_state.input_num_players = 4
+    
+    for seat in range(1, 5):
+        st.session_state[f"seat_player_{seat}"] = None
+        st.session_state[f"seat_borrow_{seat}"] = False
+        st.session_state[f"seat_deck_borrowed_{seat}"] = None
+        st.session_state[f"seat_deck_owned_{seat}"] = None
+        st.session_state[f"seat_mull_{seat}"] = 0
+        st.session_state[f"seat_win_{seat}"] = False
+
+# Reset skip flag on render start
+st.session_state.skip_draft_save = False
 
 # --- LIVE GAME COMPANION FRAGMENT ---
 @st.fragment(run_every=1)
@@ -119,11 +145,8 @@ if st.button("🏁 End Match & Auto-Fill Form", type="primary", use_container_wi
     final_minutes = max(1, round(current_elapsed / 60))
     final_turns = int(st.session_state.get("live_turn_count", 1))
     
-    # Overwrite values
     st.session_state.input_total_turns = final_turns
     st.session_state.input_duration = final_minutes
-    
-    # Increment form version to force widget re-render with new values
     st.session_state.form_v += 1
     
     sync_companion_to_db()
@@ -140,24 +163,8 @@ with col_header1:
     st.subheader("Match Details")
 with col_header2:
     if st.button("🧹 Clear Form Inputs", use_container_width=True):
-        if hasattr(db, 'update_live_pod_draft'):
-            db.update_live_pod_draft(active_session_key, {})
-        
-        # Increment version to reset all widget keys cleanly
+        clear_form_selections()
         st.session_state.form_v += 1
-        st.session_state.input_total_turns = 8
-        st.session_state.input_duration = 45
-        st.session_state.input_win_condition = None
-        st.session_state.input_match_notes = ""
-        
-        for seat in range(1, 5):
-            st.session_state[f"seat_player_{seat}"] = None
-            st.session_state[f"seat_borrow_{seat}"] = False
-            st.session_state[f"seat_deck_borrowed_{seat}"] = None
-            st.session_state[f"seat_deck_owned_{seat}"] = None
-            st.session_state[f"seat_mull_{seat}"] = 0
-            st.session_state[f"seat_win_{seat}"] = False
-
         st.toast("Form cleared!", icon="🧹")
         st.rerun()
 
@@ -254,7 +261,6 @@ else:
                 placeholder="Select player...", 
                 key=f"{pk}_{fv}"
             )
-            # Sync key choice to standard name
             st.session_state[pk] = selected_player_name
             
             saved_b_val = bool(st.session_state.get(bk, False))
@@ -366,6 +372,7 @@ else:
             }
             db.log_game_session(game_data, participants_input)
             
+            # Reset live timer companion
             st.session_state.timer_running = False
             st.session_state.timer_start_time = None
             st.session_state.timer_elapsed_seconds = 0
@@ -373,13 +380,14 @@ else:
             db.update_live_session(active_session_key, False, None, 0, 1)
 
             if submit_match:
-                if hasattr(db, 'update_live_pod_draft'):
-                    db.update_live_pod_draft(active_session_key, {})
+                # FULL CLEAR: reset memory state and wipe Supabase draft
+                clear_form_selections()
                 st.session_state.form_v += 1
                 st.toast("Game logged & form cleared!", icon="🧹")
                 st.rerun()
 
             elif rematch_submit:
+                # REMATCH CLEAR: wipe win condition, notes, mulligans, winners BUT KEEP players & decks
                 st.session_state.form_v += 1
                 st.session_state.input_win_condition = None
                 st.session_state.input_match_notes = ""
