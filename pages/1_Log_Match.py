@@ -29,8 +29,12 @@ if "input_total_turns" not in st.session_state:
 if "input_duration" not in st.session_state:
     st.session_state["input_duration"] = 45
 
-# Function to clear all seat form selections manually
+# --- PERSISTENT SEAT INPUT DICTIONARY ---
+if "saved_pod_state" not in st.session_state:
+    st.session_state.saved_pod_state = {}
+
 def clear_form_selections():
+    st.session_state.saved_pod_state = {}
     keys_to_clear = ["input_win_condition", "input_match_notes", "input_num_players"]
     for seat in range(1, 5):
         keys_to_clear.extend([
@@ -189,15 +193,30 @@ else:
 
     for seat in range(1, num_players + 1):
         with st.expander(f"👤 Seat {seat}", expanded=(seat == 1)):
-            # Persistent key binds for Player and Borrowed Checkbox
+            # 1. Restore Player selection from saved_pod_state
+            saved_p = st.session_state.saved_pod_state.get(f"p_{seat}", None)
+            p_idx = player_names.index(saved_p) if saved_p in player_names else None
+
             selected_player_name = st.selectbox(
                 "Player", 
                 player_names, 
-                index=None, 
+                index=p_idx, 
                 placeholder="Select player...", 
                 key=f"seat_player_{seat}"
             )
-            is_borrowing = st.checkbox("🎁 Borrowing a deck from someone else?", key=f"seat_borrow_{seat}")
+            
+            # Save selection to custom dictionary
+            if selected_player_name:
+                st.session_state.saved_pod_state[f"p_{seat}"] = selected_player_name
+
+            # 2. Restore Borrowing Checkbox
+            saved_borrow = st.session_state.saved_pod_state.get(f"borrow_{seat}", False)
+            is_borrowing = st.checkbox(
+                "🎁 Borrowing a deck from someone else?", 
+                value=saved_borrow,
+                key=f"seat_borrow_{seat}"
+            )
+            st.session_state.saved_pod_state[f"borrow_{seat}"] = is_borrowing
             
             selected_player_id = None
             selected_deck_id = None
@@ -207,30 +226,40 @@ else:
                 if is_borrowing:
                     if all_global_decks:
                         global_deck_dict = {f"{d['deck_name']} (Owner: {d['owner_name']})": d['deck_id'] for d in all_global_decks}
+                        g_keys = list(global_deck_dict.keys())
+                        saved_bd = st.session_state.saved_pod_state.get(f"deck_b_{seat}", None)
+                        bd_idx = g_keys.index(saved_bd) if saved_bd in g_keys else None
+
                         selected_deck_label = st.selectbox(
                             "Select Borrowed Deck", 
-                            list(global_deck_dict.keys()), 
-                            index=None, 
+                            g_keys, 
+                            index=bd_idx, 
                             placeholder="Select borrowed deck...", 
                             key=f"seat_deck_borrowed_{seat}"
                         )
                         if selected_deck_label:
                             selected_deck_id = global_deck_dict[selected_deck_label]
+                            st.session_state.saved_pod_state[f"deck_b_{seat}"] = selected_deck_label
                     else:
                         st.caption("⚠️ No global decks found.")
                 else:
                     available_decks = db.fetch_player_decks(selected_player_id)
                     if available_decks:
                         deck_dict = {f"{d['deck_name']} (⚡ Bracket {d.get('bracket', 3)})": d['deck_id'] for d in available_decks}
+                        d_keys = list(deck_dict.keys())
+                        saved_od = st.session_state.saved_pod_state.get(f"deck_o_{seat}", None)
+                        od_idx = d_keys.index(saved_od) if saved_od in d_keys else None
+
                         selected_deck_name = st.selectbox(
                             "Deck", 
-                            list(deck_dict.keys()), 
-                            index=None, 
+                            d_keys, 
+                            index=od_idx, 
                             placeholder="Select deck...", 
                             key=f"seat_deck_owned_{seat}"
                         )
                         if selected_deck_name:
                             selected_deck_id = deck_dict[selected_deck_name]
+                            st.session_state.saved_pod_state[f"deck_o_{seat}"] = selected_deck_name
                     else:
                         st.caption("⚠️ No active decks found for this player.")
             else:
@@ -238,9 +267,13 @@ else:
 
             col_mull, col_win = st.columns(2)
             with col_mull:
-                mulligans = st.number_input("Mulligans", 0, 7, 0, key=f"seat_mull_{seat}")
+                saved_mull = st.session_state.saved_pod_state.get(f"mull_{seat}", 0)
+                mulligans = st.number_input("Mulligans", 0, 7, value=saved_mull, key=f"seat_mull_{seat}")
+                st.session_state.saved_pod_state[f"mull_{seat}"] = mulligans
             with col_win:
-                is_winner = st.checkbox("Winner 🏆", key=f"seat_win_{seat}")
+                saved_win = st.session_state.saved_pod_state.get(f"win_{seat}", False)
+                is_winner = st.checkbox("Winner 🏆", value=saved_win, key=f"seat_win_{seat}")
+                st.session_state.saved_pod_state[f"win_{seat}"] = is_winner
 
             participants_input.append({
                 "seat_position": seat,
@@ -297,6 +330,8 @@ else:
                 keys_to_reset = ["input_win_condition", "input_match_notes"]
                 for seat in range(1, num_players + 1):
                     keys_to_reset.extend([f"seat_mull_{seat}", f"seat_win_{seat}"])
+                    st.session_state.saved_pod_state[f"mull_{seat}"] = 0
+                    st.session_state.saved_pod_state[f"win_{seat}"] = False
                 for k in keys_to_reset:
                     if k in st.session_state:
                         del st.session_state[k]
