@@ -96,7 +96,7 @@ if tab_log:
 
         import time
 
-        # FRAGMENT 1A: LIVE TIMER & TURN COUNTER
+        # FRAGMENT 1: LIVE GAME COMPANION
         @st.fragment
         def render_live_companion_fragment():
             current_elapsed = st.session_state.timer_elapsed_seconds
@@ -120,14 +120,14 @@ if tab_log:
                                 st.session_state.timer_running = True
                                 st.session_state.timer_start_time = time.time()
                                 sync_companion_to_db()
-                                st.rerun(scope="fragment")
+                                st.rerun()
                         else:
                             if st.button("⏸️ Pause", use_container_width=True, key="btn_timer_pause"):
                                 st.session_state.timer_running = False
                                 st.session_state.timer_elapsed_seconds = current_elapsed
                                 st.session_state.timer_start_time = None
                                 sync_companion_to_db()
-                                st.rerun(scope="fragment")
+                                st.rerun()
                     
                     with t_col2:
                         if st.button("🔄 Reset Timer", use_container_width=True, key="btn_timer_reset"):
@@ -136,7 +136,7 @@ if tab_log:
                             st.session_state.timer_elapsed_seconds = 0
                             st.session_state.live_turn_count = 1
                             sync_companion_to_db()
-                            st.rerun(scope="fragment")
+                            st.rerun()
 
                 with col_turns:
                     st.markdown("#### 🔄 Turn Counter")
@@ -148,12 +148,12 @@ if tab_log:
                             if st.session_state.live_turn_count > 1:
                                 st.session_state.live_turn_count -= 1
                                 sync_companion_to_db()
-                                st.rerun(scope="fragment")
+                                st.rerun()
                     with turn_col2:
                         if st.button("➕ Next Turn", type="primary", use_container_width=True, key="btn_add_turn"):
                             st.session_state.live_turn_count += 1
                             sync_companion_to_db()
-                            st.rerun(scope="fragment")
+                            st.rerun()
 
                 st.divider()
                 
@@ -173,25 +173,22 @@ if tab_log:
 
         render_live_companion_fragment()
 
-        # FRAGMENT 1B: MATCH FORM & SEAT SELECTORS
-        @st.fragment
-        def render_match_form_fragment():
-            st.subheader("Match Details")
+        # MATCH DETAILS FORM
+        st.subheader("Match Details")
 
-            if "input_total_turns" not in st.session_state:
-                st.session_state["input_total_turns"] = 8
-            if "input_duration" not in st.session_state:
-                st.session_state["input_duration"] = 45
-            if "form_version" not in st.session_state:
-                st.session_state.form_version = 0
+        if "input_total_turns" not in st.session_state:
+            st.session_state["input_total_turns"] = 8
+        if "input_duration" not in st.session_state:
+            st.session_state["input_duration"] = 45
+        if "form_version" not in st.session_state:
+            st.session_state.form_version = 0
 
-            form_v = st.session_state.form_version
-            players = db.fetch_players()
-            
-            if not players:
-                st.warning("No players found in database!")
-                return
-
+        form_v = st.session_state.form_version
+        players = db.fetch_players()
+        
+        if not players:
+            st.warning("No players found in database!")
+        else:
             player_dict = {p['display_name']: p['player_id'] for p in players}
             player_names = list(player_dict.keys())
             all_global_decks = db.fetch_all_decks_with_owners() if hasattr(db, 'fetch_all_decks_with_owners') else []
@@ -320,8 +317,6 @@ if tab_log:
                         st.toast("Game logged! Ready for Rematch with same pod & decks!", icon="🔁")
 
                     st.rerun()
-
-        render_match_form_fragment()
 
 # ------------------------------------------------------------------------------
 # TAB 2: ADD DECK (ADMIN & LOGGER ONLY)
