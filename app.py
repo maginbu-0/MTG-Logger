@@ -37,22 +37,24 @@ with st.sidebar:
             st.session_state.user_role = "Viewer"
             st.rerun()
 
-# --- PAGE ROUTING BASED ON ROLE ---
+# --- PAGE ROUTING BASED ON ROLE (CLEAN FILENAMES) ---
 role = st.session_state.user_role
 
+# Page definitions
+analytics_page = st.Page("pages/4_Analytics.py", title="Analytics", icon="📊")
 log_page = st.Page("pages/1_Log_Match.py", title="Log Match", icon="⚔️")
 add_deck_page = st.Page("pages/2_Add_Deck.py", title="Add Deck", icon="➕")
 recap_page = st.Page("pages/3_Daily_Recap.py", title="Daily Recap", icon="📋")
-analytics_page = st.Page("pages/4_Analytics.py", title="Analytics", icon="📊")
 deck_admin_page = st.Page("pages/5_Deck_Admin.py", title="Deck & Player Admin", icon="🛠️")
 match_admin_page = st.Page("pages/6_Match_Admin.py", title="Match Admin", icon="✏️")
 
+# Analytics is now FIRST in every list, making it the default landing page
 if role == "Admin":
-    pg = st.navigation([log_page, add_deck_page, recap_page, analytics_page, deck_admin_page, match_admin_page])
+    pg = st.navigation([analytics_page, log_page, add_deck_page, recap_page, deck_admin_page, match_admin_page])
 elif role == "Logger":
-    pg = st.navigation([log_page, add_deck_page, recap_page, analytics_page])
+    pg = st.navigation([analytics_page, log_page, add_deck_page, recap_page])
 else:
     st.info("ℹ️ You are in Read-Only mode. Enter a PIN in the sidebar to log games or add decks.")
-    pg = st.navigation([recap_page, analytics_page])
+    pg = st.navigation([analytics_page, recap_page])
 
 pg.run()
