@@ -98,12 +98,20 @@ if tab_log:
 
         refresh_rate = 1 if st.session_state.get("timer_running", False) else None
 
-        # --- STREAMLIT FRAGMENT: LIVE GAME COMPANION ---
+        # --- STREAMLIT FRAGMENT: LIVE GAME COMPANION (ISOLATED POLLING) ---
+        refresh_rate = 1 if st.session_state.get("timer_running", False) else None
+
         @st.fragment(run_every=refresh_rate)
         def render_live_companion_fragment():
             current_elapsed = st.session_state.timer_elapsed_seconds
             if st.session_state.timer_running and st.session_state.timer_start_time is not None:
                 current_elapsed += int(time.time() - st.session_state.timer_start_time)
+
+            # Throttled Background DB Sync: Update DB every 15 seconds automatically without forcing UI reruns
+            last_sync = st.session_state.get("last_db_sync_time", 0)
+            if st.session_state.timer_running and (time.time() - last_sync > 15):
+                st.session_state.last_db_sync_time = time.time()
+                sync_companion_to_db()
 
             with st.expander(f"⏱️ Live Game Companion ({active_session_key} Pod)", expanded=True):
                 col_timer, col_turns = st.columns(2)
@@ -121,6 +129,7 @@ if tab_log:
                             if st.button("▶️ Start / Resume", use_container_width=True, key="btn_timer_start"):
                                 st.session_state.timer_running = True
                                 st.session_state.timer_start_time = time.time()
+                                st.session_state.last_db_sync_time = time.time()
                                 sync_companion_to_db()
                                 st.rerun(scope="fragment")
                         else:
