@@ -4,16 +4,6 @@ import db
 
 st.subheader("📊 Playgroup Operations & Metrics")
 
-# --- SVG URL MAPPER FOR SCRYFALL MANA ICONS ---
-MANA_SVG_URLS = {
-    'W': "https://svgs.scryfall.io/card-symbols/W.svg",
-    'U': "https://svgs.scryfall.io/card-symbols/U.svg",
-    'B': "https://svgs.scryfall.io/card-symbols/B.svg",
-    'R': "https://svgs.scryfall.io/card-symbols/R.svg",
-    'G': "https://svgs.scryfall.io/card-symbols/G.svg",
-    'C': "https://svgs.scryfall.io/card-symbols/C.svg"
-}
-
 @st.fragment
 def render_analytics_fragment():
     raw_stats = db.get_player_stats()
@@ -106,21 +96,15 @@ def render_analytics_fragment():
                     if char in color_counts:
                         color_counts[char] += count
 
-            color_names = {'W': 'White', 'U': 'Blue', 'B': 'Black', 'R': 'Red', 'G': 'Green', 'C': 'Colorless'}
-            
+            symbol_map = {'W': '☀️ White', 'U': '💧 Blue', 'B': '💀 Black', 'R': '🔥 Red', 'G': '🌳 Green', 'C': '💎 Colorless'}
             df_color_dist = pd.DataFrame([
-                {
-                    "icon": MANA_SVG_URLS[k],
-                    "color": color_names[k], 
-                    "decks": v
-                } 
+                {"color": symbol_map[k], "decks": v} 
                 for k, v in color_counts.items() if v > 0
             ]).sort_values(by="decks", ascending=False)
 
             st.dataframe(
-                df_color_dist[['icon', 'color', 'decks']],
+                df_color_dist,
                 column_config={
-                    "icon": st.column_config.ImageColumn("", width="small"),
                     "color": st.column_config.TextColumn("Color"),
                     "decks": st.column_config.NumberColumn("Decks Featured In", format="%d"),
                 },
@@ -187,6 +171,7 @@ def render_analytics_fragment():
     if color_stats:
         df_colors = pd.DataFrame([dict(row) for row in color_stats])
         
+        mana_icons = {'W': '☀️', 'U': '💧', 'B': '💀', 'R': '🔥', 'G': '🌳', 'C': '💎'}
         guild_names = {
             'W': 'Mono White', 'U': 'Mono Blue', 'B': 'Mono Black', 'R': 'Mono Red', 'G': 'Mono Green', 'C': 'Colorless',
             'WU': 'Azorius', 'UB': 'Dimir', 'BR': 'Rakdos', 'RG': 'Gruul', 'GW': 'Selesnya',
@@ -214,15 +199,20 @@ def render_analytics_fragment():
         })
         df_grouped_colors['win_rate'] = (df_grouped_colors['wins'] / df_grouped_colors['games_played']) * 100
         
-        df_grouped_colors['icon'] = df_grouped_colors['canonical_color'].apply(lambda code: MANA_SVG_URLS.get(code[0], MANA_SVG_URLS['C']))
-        df_grouped_colors['identity_name'] = df_grouped_colors['canonical_color'].apply(lambda code: guild_names.get(code, code))
+        def format_color_identity(clean_code):
+            if clean_code == "C":
+                return "💎 Colorless"
+            emojis = "".join([mana_icons.get(char, '') for char in clean_code])
+            name = guild_names.get(clean_code, clean_code)
+            return f"{emojis} {name}"
+            
+        df_grouped_colors['identity_display'] = df_grouped_colors['canonical_color'].apply(format_color_identity)
         df_grouped_colors = df_grouped_colors.sort_values(by=['win_rate', 'games_played'], ascending=[False, False])
         
         st.dataframe(
-            df_grouped_colors[['icon', 'identity_name', 'games_played', 'wins', 'win_rate']],
+            df_grouped_colors[['identity_display', 'games_played', 'wins', 'win_rate']],
             column_config={
-                "icon": st.column_config.ImageColumn("", width="small"),
-                "identity_name": st.column_config.TextColumn("Color Identity"),
+                "identity_display": st.column_config.TextColumn("Color Identity"),
                 "games_played": st.column_config.NumberColumn("Played", format="%d"),
                 "wins": st.column_config.NumberColumn("Wins", format="%d"),
                 "win_rate": st.column_config.ProgressColumn(
