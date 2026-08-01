@@ -797,3 +797,36 @@ def update_live_pod_draft(session_key, pod_dict):
             conn.rollback()
             # If column doesn't exist yet, we catch gracefully
             pass
+
+def fetch_daily_card_from_db(today_date_str):
+    """Checks Supabase PostgreSQL for a saved card for today's date."""
+    query = "SELECT card_data FROM daily_card WHERE card_date = %s::date;"
+    with get_db() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute(query, (today_date_str,))
+            row = cur.fetchone()
+            if row and row.get('card_data'):
+                # Handle dict conversion if loaded as string JSON
+                data = row['card_data']
+                return json.loads(data) if isinstance(data, str) else data
+        except Exception as e:
+            conn.rollback()
+            print(f"Error fetching daily card from DB: {e}")
+        return None
+
+def save_daily_card_to_db(today_date_str, card_data):
+    """Saves a newly fetched Scryfall card for today's date into Supabase via SQL UPSERT."""
+    query = """
+        INSERT INTO daily_card (card_date, card_data, created_at)
+        VALUES (%s::date, %s, NOW())
+        ON CONFLICT (card_date) 
+        DO UPDATE SET card_data = EXCLUDED.card_data;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute(query, (today_date_str, json.dumps(card_data)))
+        except Exception as e:
+            conn.rollback()
+            print(f"Error saving daily card to DB: {e}")
