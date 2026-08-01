@@ -4,6 +4,12 @@ import db
 
 st.subheader("📊 Playgroup Operations & Metrics")
 
+def get_mana_svg_html(symbol_code: str) -> str:
+    """Generates an inline HTML img tag for an MTG mana symbol SVG from Scryfall."""
+    symbol_code = symbol_code.upper()
+    svg_url = f"https://svgs.scryfall.io/card-symbols/{symbol_code}.svg"
+    return f'<img src="{svg_url}" style="height: 1.1em; width: 1.1em; vertical-align: -0.15em; margin: 0 1px; display: inline-block;" alt="{symbol_code}"/>'
+
 @st.fragment
 def render_analytics_fragment():
     raw_stats = db.get_player_stats()
@@ -96,7 +102,16 @@ def render_analytics_fragment():
                     if char in color_counts:
                         color_counts[char] += count
 
-            symbol_map = {'W': '☀️ White', 'U': '💧 Blue', 'B': '💀 Black', 'R': '🔥 Red', 'G': '🌳 Green', 'C': '💎 Colorless'}
+            # Replaced color emojis with official MTG Scryfall SVG icons
+            symbol_map = {
+                'W': f"{get_mana_svg_html('W')} White",
+                'U': f"{get_mana_svg_html('U')} Blue",
+                'B': f"{get_mana_svg_html('B')} Black",
+                'R': f"{get_mana_svg_html('R')} Red",
+                'G': f"{get_mana_svg_html('G')} Green",
+                'C': f"{get_mana_svg_html('C')} Colorless"
+            }
+            
             df_color_dist = pd.DataFrame([
                 {"color": symbol_map[k], "decks": v} 
                 for k, v in color_counts.items() if v > 0
@@ -171,7 +186,16 @@ def render_analytics_fragment():
     if color_stats:
         df_colors = pd.DataFrame([dict(row) for row in color_stats])
         
-        mana_icons = {'W': '☀️', 'U': '💧', 'B': '💀', 'R': '🔥', 'G': '🌳', 'C': '💎'}
+        # Scryfall SVG mapper
+        mana_icons = {
+            'W': get_mana_svg_html('W'),
+            'U': get_mana_svg_html('U'),
+            'B': get_mana_svg_html('B'),
+            'R': get_mana_svg_html('R'),
+            'G': get_mana_svg_html('G'),
+            'C': get_mana_svg_html('C')
+        }
+        
         guild_names = {
             'W': 'Mono White', 'U': 'Mono Blue', 'B': 'Mono Black', 'R': 'Mono Red', 'G': 'Mono Green', 'C': 'Colorless',
             'WU': 'Azorius', 'UB': 'Dimir', 'BR': 'Rakdos', 'RG': 'Gruul', 'GW': 'Selesnya',
@@ -201,10 +225,10 @@ def render_analytics_fragment():
         
         def format_color_identity(clean_code):
             if clean_code == "C":
-                return "💎 Colorless"
-            emojis = "".join([mana_icons.get(char, '') for char in clean_code])
+                return f"{mana_icons['C']} Colorless"
+            icons = "".join([mana_icons.get(char, '') for char in clean_code])
             name = guild_names.get(clean_code, clean_code)
-            return f"{emojis} {name}"
+            return f"{icons} {name}"
             
         df_grouped_colors['identity_display'] = df_grouped_colors['canonical_color'].apply(format_color_identity)
         df_grouped_colors = df_grouped_colors.sort_values(by=['win_rate', 'games_played'], ascending=[False, False])
