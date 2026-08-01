@@ -1,39 +1,52 @@
 import streamlit as st
 import requests
+import re
 from datetime import datetime, timezone
 import db
 
 st.subheader("🃏 Scryfall Card of the Day")
 
-def parse_scryfall_payload(data):
-    """Safely extracts all card fields with robust fallbacks for special layouts/sets."""
+def format_mana_symbols(text: str) -> str:
+    """
+    Replaces bracketed MTG symbols like {U}, {4}, {W/P}, {T} 
+    with inline SVG mana symbol icons from Scryfall.
+    """
+    if not text:
+        return ""
     
-    # 1. Resolve Image URL
+    def symbol_replacer(match):
+        raw_symbol = match.group(1).replace("/", "")  # e.g., 'W/P' -> 'WP'
+        svg_url = f"https://svgs.scryfall.io/card-symbols/{raw_symbol.upper()}.svg"
+        return (
+            f'<img src="{svg_url}" '
+            f'style="height: 1.1em; width: 1.1em; vertical-align: -0.15em; margin: 0 1px; display: inline-block;" '
+            f'alt="{{{raw_symbol}}}"/>'
+        )
+
+    # Match anything inside curly braces, e.g. {U}, {4}, {T}
+    return re.sub(r'\{([A-Za-z0-9/]+)\}', symbol_replacer, text)
+
+def parse_scryfall_payload(data):
+    """Extracts card fields with robust fallbacks for special layouts/sets."""
     image_url = None
     if "image_uris" in data:
         image_url = data["image_uris"].get("normal") or data["image_uris"].get("large")
     elif "card_faces" in data and "image_uris" in data["card_faces"][0]:
         image_url = data["card_faces"][0]["image_uris"].get("normal")
 
-    # 2. Resolve Oracle Text
     oracle_text = data.get("oracle_text", "")
     if not oracle_text and "card_faces" in data:
         oracle_text = "\n\n---\n\n".join([f.get("oracle_text", "") for f in data["card_faces"] if f.get("oracle_text")])
 
-    # 3. Resolve Type Line
     type_line = data.get("type_line", "")
     if not type_line and "card_faces" in data:
         type_line = " // ".join([f.get("type_line", "") for f in data["card_faces"] if f.get("type_line")])
 
-    # 4. Resolve Artist
     artist = data.get("artist", "")
     if not artist and "card_faces" in data:
         artist = " / ".join([f.get("artist", "") for f in data["card_faces"] if f.get("artist")])
 
-    # 5. Resolve Set Name
     set_name = data.get("set_name") or data.get("set", "").upper()
-
-    # 6. Resolve Price
     prices = data.get("prices", {})
     usd_price = prices.get("usd") or prices.get("usd_foil") or "N/A"
 
@@ -51,23 +64,14 @@ def parse_scryfall_payload(data):
     }
 
 def get_or_fetch_daily_card():
-    """
-    1. Checks Supabase for today's card (YYYY-MM-DD UTC).
-    2. If found, returns the exact stored card.
-    3. If missing (first visit after 00:00 UTC), fetches a random card from Scryfall,
-       saves it to Supabase, and serves it for the rest of the day.
-    """
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     
-    # 1. Check DB first
     cached_card = db.fetch_daily_card_from_db(today_str)
     if cached_card and isinstance(cached_card, dict):
-        # Guarantee missing keys get filled if loaded from old DB row
         if not cached_card.get("date"): cached_card["date"] = today_str
         if not cached_card.get("source"): cached_card["source"] = "Supabase DB"
         return {"success": True, "card": cached_card}
 
-    # 2. Fetch fresh from Scryfall API
     url = "https://api.scryfall.com/cards/random"
     headers = {
         "User-Agent": "MTGCommanderTracker/1.0 (Streamlit App)",
@@ -80,7 +84,6 @@ def get_or_fetch_daily_card():
             data = response.json()
             card_payload = parse_scryfall_payload(data)
             
-            # Save to DB
             db.save_daily_card_to_db(today_str, card_payload)
             
             card_payload["date"] = today_str
@@ -114,14 +117,24 @@ else:
 
     with col_info:
         st.title(card.get("name", "Unknown Card"))
-        st.markdown(f"**Mana Cost:** `{card.get('mana_cost', 'N/A')}`")
+        
+        formatted_cost = format_mana_symbols(card.get("mana_cost", ""))
+        st.markdown(f"**Mana Cost:** {formatted_cost}", unsafe_allow_html=True)
         st.markdown(f"**Type:** {card.get('type_line', 'N/A')}")
         st.markdown(f"**Set:** {card.get('set_name', 'N/A')}")
         st.markdown(f"**Est. Price (USD):** `${card.get('prices', 'N/A')}`")
         
         st.divider()
         st.markdown("#### 📜 Card Text / Description")
-        st.info(card.get("oracle_text", "*No oracle text.*"))
+        
+        formatted_oracle = format_mana_symbols(card.get("oracle_text", "*No oracle text.*"))
+        # Render oracle text inside a custom card box with rendered mana symbols
+        st.markdown(
+            f'<div style="background-color: #1e293b; padding: 15px; border-radius: 8px; line-height: 1.6; border: 1px solid #334155;">'
+            f'{formatted_oracle}'
+            f'</div>',
+            unsafe_allow_html=True
+        )
         
         if card.get("flavor_text"):
             st.caption(f"*\"{card['flavor_text']}\"*")
@@ -130,9 +143,8 @@ else:
         st.markdown(f"[View on Scryfall]({card.get('scryfall_uri', '#')})")
 
     st.divider()
-    # Debug/re-sync option if old bad DB row was cached
     if st.button("🔄 Clear Today's DB Cache & Fetch New Card", type="secondary"):
         today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        db.save_daily_card_to_db(today_str, {}) # Clear row in DB
+        db.save_daily_card_to_db(today_str, {})
         st.toast("Cleared DB cache for today!", icon="🧹")
         st.rerun()
