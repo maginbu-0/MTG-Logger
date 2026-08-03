@@ -703,7 +703,7 @@ def update_deck_details(deck_id, deck_name, owner_id=None, bracket=3, *args, **k
     query = """
         UPDATE decks 
         SET deck_name = %s,
-            owner_id = COALESCE(%s, owner_id),
+            player_id = COALESCE(%s, player_id),
             bracket = %s
         WHERE deck_id = %s;
     """
