@@ -150,7 +150,7 @@ def render_analytics_fragment():
             df_decks[['deck_name', 'owner_name', 'games_played', 'wins', 'win_rate']],
             column_config={
                 "deck_name": st.column_config.TextColumn("Deck Name"),
-                "owner_name": st.column_config.TextColumn("Pilot / Owner"),
+                "owner_name": st.column_config.TextColumn("Owner"),
                 "games_played": st.column_config.NumberColumn("Played", format="%d"),
                 "wins": st.column_config.NumberColumn("Wins", format="%d"),
                 "win_rate": st.column_config.ProgressColumn(
@@ -283,7 +283,7 @@ def render_analytics_fragment():
                 st.dataframe(
                     df_medium[['medium', 'total_games', 'avg_duration']],
                     column_config={
-                        "medium": st.column_config.TextColumn("Platform / Medium"),
+                        "medium": st.column_config.TextColumn("Platform"),
                         "total_games": st.column_config.NumberColumn("Matches Logged", format="%d"),
                         "avg_duration": st.column_config.NumberColumn("Avg Game Length", format="%d mins"),
                     },
