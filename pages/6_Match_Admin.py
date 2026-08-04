@@ -50,13 +50,23 @@ def render_admin_matches_fragment():
                     with ecol2:
                         edit_duration = st.number_input("Duration (mins)", 1, 500, value=int(game_data.get('duration_minutes', 45)), key=f"edit_dur_{game_to_edit_id}")
                     with ecol3:
-                        edit_bracket = st.selectbox("Bracket", [1, 2, 3, 4, 5], index=int(game_data.get('bracket', 3)) - 1, key=f"edit_brack_{game_to_edit_id}")
+                        raw_bracket = game_data.get('bracket')
+                        bracket_idx = (int(raw_bracket) - 1) if raw_bracket and 1 <= int(raw_bracket) <= 5 else 2
+                        edit_bracket = st.selectbox("Bracket", [1, 2, 3, 4, 5], index=bracket_idx, key=f"edit_brack_{game_to_edit_id}")
+
                     with ecol4:
                         medium_opts = ["In Person 🃏", "Convoke 💻", "SpellTable 📹"]
-                        curr_med = game_data.get('medium', "In Person 🃏")
-                        med_idx = medium_opts.index(curr_med) if curr_med in medium_opts else 0
+                        curr_med = str(game_data.get('medium', '') or '')
+                        
+                        # Robust matching: checks if DB value (e.g. "Convoke" or "Convoke 💻") matches option
+                        med_idx = 0
+                        for idx, opt in enumerate(medium_opts):
+                            if curr_med.lower() in opt.lower() or opt.lower() in curr_med.lower():
+                                med_idx = idx
+                                break
+            
                         edit_medium = st.selectbox("Medium", medium_opts, index=med_idx, key=f"edit_med_{game_to_edit_id}")
-
+                        
                     edit_win_con = st.selectbox(
                         "Win Condition",
                         ["Combat Damage", "Infinite Combo", "Alternate Win-Con", "Commander Damage", "Scoop / Surrender"],

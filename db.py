@@ -174,28 +174,34 @@ def fetch_games_by_date(selected_date):
         SELECT 
             g.game_id,
             g.total_turns,
+            g.duration_minutes,
             g.win_condition,
+            g.bracket,
+            g.medium,
             COALESCE(g.notes, '') AS notes,
             STRING_AGG(p.display_name, ', ' ORDER BY gp.seat_position) AS participants
         FROM games g
         JOIN game_participants gp ON g.game_id = gp.game_id
         JOIN players p ON gp.player_id = p.player_id
         WHERE TO_CHAR(g.played_at AT TIME ZONE 'America/Santo_Domingo', 'YYYY-MM-DD') = %s
-        GROUP BY g.game_id, g.total_turns, g.win_condition, g.notes
+        GROUP BY g.game_id, g.total_turns, g.duration_minutes, g.win_condition, g.bracket, g.medium, g.notes
         ORDER BY g.game_id DESC;
     """
     query_fallback = """
         SELECT 
             g.game_id,
             g.total_turns,
+            g.duration_minutes,
             g.win_condition,
+            g.bracket,
+            g.medium,
             COALESCE(g.notes, '') AS notes,
             STRING_AGG(p.display_name, ', ' ORDER BY gp.seat_position) AS participants
         FROM games g
         JOIN game_participants gp ON g.game_id = gp.game_id
         JOIN players p ON gp.player_id = p.player_id
         WHERE TO_CHAR(g.played_at - INTERVAL '4 hours', 'YYYY-MM-DD') = %s
-        GROUP BY g.game_id, g.total_turns, g.win_condition, g.notes
+        GROUP BY g.game_id, g.total_turns, g.duration_minutes, g.win_condition, g.bracket, g.medium, g.notes
         ORDER BY g.game_id DESC;
     """
     with get_db() as conn:
