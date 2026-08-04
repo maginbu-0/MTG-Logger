@@ -58,7 +58,6 @@ def render_admin_matches_fragment():
                         medium_opts = ["In Person 🃏", "Convoke 💻", "SpellTable 📹"]
                         curr_med = str(game_data.get('medium', '') or '')
                         
-                        # Robust matching: checks if DB value (e.g. "Convoke" or "Convoke 💻") matches option
                         med_idx = 0
                         for idx, opt in enumerate(medium_opts):
                             if curr_med.lower() in opt.lower() or opt.lower() in curr_med.lower():
@@ -165,8 +164,8 @@ def render_admin_matches_fragment():
                             st.toast(f"Game #{game_to_edit_id} updated successfully!", icon="✅")
                             st.success("Match record updated!")
                             st.rerun()
-                    else:
-                        st.info(f"No logged matches found on {filter_date.strftime('%B %d, %Y')}.")
+        else:
+            st.info(f"No logged matches found on {filter_date.strftime('%B %d, %Y')}.")
 
     with st.expander("🗑️ Delete Matches", expanded=False):
         st.markdown("Select a game session to permanently delete from database logs:")
