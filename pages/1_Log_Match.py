@@ -35,7 +35,7 @@ def save_current_draft_to_db():
     if st.session_state.get("skip_draft_save", False):
         return
     if hasattr(db, 'update_live_pod_draft'):
-        POD_KEYS_PREFIXES = ("seat_player_", "seat_borrow_", "seat_deck_borrowed_", "seat_deck_owned_", "seat_mull_", "seat_win_", "input_")
+        POD_KEYS_PREFIXES = ("seat_player_", "seat_borrow_", "seat_deck_id_borrowed_", "seat_deck_id_owned_", "seat_mull_", "seat_win_", "input_")
         draft = {k: v for k, v in st.session_state.items() if any(k.startswith(p) for p in POD_KEYS_PREFIXES) and v is not None}
         db.update_live_pod_draft(active_session_key, draft)
 
@@ -58,8 +58,8 @@ def clear_form_selections():
     for seat in range(1, 5):
         st.session_state[f"seat_player_{seat}"] = None
         st.session_state[f"seat_borrow_{seat}"] = False
-        st.session_state[f"seat_deck_borrowed_{seat}"] = None
-        st.session_state[f"seat_deck_owned_{seat}"] = None
+        st.session_state[f"seat_deck_id_borrowed_{seat}"] = None
+        st.session_state[f"seat_deck_id_owned_{seat}"] = None
         st.session_state[f"seat_mull_{seat}"] = 0
         st.session_state[f"seat_win_{seat}"] = False
 
@@ -244,8 +244,8 @@ else:
     for seat in range(1, num_players + 1):
         pk = f"seat_player_{seat}"
         bk = f"seat_borrow_{seat}"
-        bdk = f"seat_deck_borrowed_{seat}"
-        odk = f"seat_deck_owned_{seat}"
+        bdk = f"seat_deck_id_borrowed_{seat}"
+        odk = f"seat_deck_id_owned_{seat}"
         mk = f"seat_mull_{seat}"
         wk = f"seat_win_{seat}"
 
@@ -278,41 +278,41 @@ else:
                 selected_player_id = player_dict[selected_player_name]
                 if is_borrowing:
                     if all_global_decks:
-                        global_deck_dict = {f"{d['deck_name']} (Owner: {d['owner_name']})": d['deck_id'] for d in all_global_decks}
-                        g_keys = list(global_deck_dict.keys())
-                        saved_bd_val = st.session_state.get(bdk, None)
-                        bd_idx = g_keys.index(saved_bd_val) if saved_bd_val in g_keys else None
+                        global_deck_map = {d['deck_id']: f"{d['deck_name']} (Owner: {d['owner_name']})" for d in all_global_decks}
+                        g_deck_ids = list(global_deck_map.keys())
+                        
+                        saved_bd_id = st.session_state.get(bdk, None)
+                        bd_idx = g_deck_ids.index(saved_bd_id) if saved_bd_id in g_deck_ids else None
 
-                        selected_deck_label = st.selectbox(
+                        selected_deck_id = st.selectbox(
                             "Select Borrowed Deck", 
-                            g_keys, 
+                            g_deck_ids, 
+                            format_func=lambda did: global_deck_map.get(did, ""),
                             index=bd_idx, 
                             placeholder="Select borrowed deck...", 
                             key=f"{bdk}_{fv}"
                         )
-                        st.session_state[bdk] = selected_deck_label
-                        if selected_deck_label:
-                            selected_deck_id = global_deck_dict[selected_deck_label]
+                        st.session_state[bdk] = selected_deck_id
                     else:
                         st.caption("⚠️ No global decks found.")
                 else:
                     available_decks = db.fetch_player_decks(selected_player_id)
                     if available_decks:
-                        deck_dict = {f"{d['deck_name']} (⚡ Bracket {d.get('bracket', 3)})": d['deck_id'] for d in available_decks}
-                        d_keys = list(deck_dict.keys())
-                        saved_od_val = st.session_state.get(odk, None)
-                        od_idx = d_keys.index(saved_od_val) if saved_od_val in d_keys else None
+                        owned_deck_map = {d['deck_id']: f"{d['deck_name']} (⚡ Bracket {d.get('bracket', 3)})" for d in available_decks}
+                        o_deck_ids = list(owned_deck_map.keys())
+                        
+                        saved_od_id = st.session_state.get(odk, None)
+                        od_idx = o_deck_ids.index(saved_od_id) if saved_od_id in o_deck_ids else None
 
-                        selected_deck_name = st.selectbox(
+                        selected_deck_id = st.selectbox(
                             "Deck", 
-                            d_keys, 
+                            o_deck_ids, 
+                            format_func=lambda did: owned_deck_map.get(did, ""),
                             index=od_idx, 
                             placeholder="Select deck...", 
                             key=f"{odk}_{fv}"
                         )
-                        st.session_state[odk] = selected_deck_name
-                        if selected_deck_name:
-                            selected_deck_id = deck_dict[selected_deck_name]
+                        st.session_state[odk] = selected_deck_id
                     else:
                         st.caption("⚠️ No active decks found for this player.")
             else:
