@@ -66,7 +66,7 @@ def render_admin_matches_fragment():
                                 break
             
                         edit_medium = st.selectbox("Medium", medium_opts, index=med_idx, key=f"edit_med_{game_to_edit_id}")
-                        
+
                     edit_win_con = st.selectbox(
                         "Win Condition",
                         ["Combat Damage", "Infinite Combo", "Alternate Win-Con", "Commander Damage", "Scoop / Surrender"],
@@ -142,7 +142,7 @@ def render_admin_matches_fragment():
                         missing_decks = any(s['deck_id'] is None for s in updated_seats)
                         
                         if winners_count != 1:
-                            st.warning("Please mark exactly ONE player as the winner.")
+                            st.error("Please mark exactly ONE player as the winner.")
                         elif missing_decks:
                             st.error("Please ensure a valid deck is assigned to all seats.")
                         else:
@@ -156,11 +156,17 @@ def render_admin_matches_fragment():
                                 medium=edit_medium,
                                 participants=updated_seats
                             )
+                            
+                            # Deselect the game dropdown state so the editor closes on rerun
+                            select_widget_key = f"admin_select_match_edit_{filter_date}"
+                            if select_widget_key in st.session_state:
+                                del st.session_state[select_widget_key]
+                                
                             st.toast(f"Game #{game_to_edit_id} updated successfully!", icon="✅")
                             st.success("Match record updated!")
                             st.rerun()
-        else:
-            st.info(f"No logged matches found on {filter_date.strftime('%B %d, %Y')}.")
+                    else:
+                        st.info(f"No logged matches found on {filter_date.strftime('%B %d, %Y')}.")
 
     with st.expander("🗑️ Delete Matches", expanded=False):
         st.markdown("Select a game session to permanently delete from database logs:")
