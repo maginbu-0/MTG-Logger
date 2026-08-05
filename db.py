@@ -4,12 +4,8 @@ from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 from contextlib import contextmanager
 import streamlit as st
-import requests
-import json
-import urllib.request
-import re
 
-# 1. Load local .env file if running locally
+# Load local .env file if running locally
 load_dotenv()
 
 DATABASE_URL = None
@@ -32,7 +28,6 @@ def get_db():
         )
         
     try:
-        # Added connect_timeout=3 so connection hangs fail fast instead of locking the container
         conn = psycopg2.connect(
             DATABASE_URL, 
             cursor_factory=RealDictCursor,
@@ -40,7 +35,7 @@ def get_db():
         )
     except Exception as e:
         print(f"Database Connection Error: {e}")
-        st.error("⚠️ Unable to connect to the database. Please check connection string / secrets.")
+        st.error("⚠️ Unable to connect to database. Please check connection string / secrets.")
         raise e
 
     try:
@@ -619,10 +614,10 @@ def get_or_create_commander(name, color_identity="Unknown"):
             return comm_id
 
 def fetch_moxfield_deck(moxfield_url):
-    """
-    Extracts deck ID from URL and fetches public JSON details from Moxfield API with a custom User-Agent.
-    """
-    # Extract deck ID from standard or clean URLs
+    import re
+    import json
+    import urllib.request
+    
     match = re.search(r'decks/([a-zA-Z0-9_-]+)', moxfield_url)
     if not match:
         raise ValueError("Invalid Moxfield URL format. Expected 'https://www.moxfield.com/decks/<deck_id>'")
@@ -630,7 +625,6 @@ def fetch_moxfield_deck(moxfield_url):
     deck_id = match.group(1)
     api_url = f"https://api.moxfield.com/v2/decks/all/{deck_id}"
 
-    # Pass a standard Browser User-Agent header to avoid HTTP 403 Forbidden
     req = urllib.request.Request(
         api_url,
         headers={
@@ -784,9 +778,8 @@ def update_full_game_match(game_id, total_turns, duration_minutes, win_condition
 
     st.cache_data.clear()
 
-
 def fetch_live_pod_draft(session_key="Logger"):
-    """Fetches saved unsubmitted pod form setup from DB."""
+    import json
     query = "SELECT pod_draft_json FROM live_game_sessions WHERE session_key = %s;"
     with get_db() as conn:
         cur = conn.cursor()
@@ -800,7 +793,7 @@ def fetch_live_pod_draft(session_key="Logger"):
         return {}
 
 def update_live_pod_draft(session_key, pod_dict):
-    """Saves draft pod state to DB so refreshes won't lose selected players/decks."""
+    import json
     query = """
         UPDATE live_game_sessions 
         SET pod_draft_json = %s, updated_at = NOW() 
@@ -812,11 +805,10 @@ def update_live_pod_draft(session_key, pod_dict):
             cur.execute(query, (json.dumps(pod_dict), session_key))
         except Exception:
             conn.rollback()
-            # If column doesn't exist yet, we catch gracefully
             pass
 
 def fetch_daily_card_from_db(today_date_str):
-    """Checks Supabase PostgreSQL for a saved card for today's date."""
+    import json
     query = "SELECT card_data FROM daily_card WHERE card_date = %s::date;"
     with get_db() as conn:
         cur = conn.cursor()
@@ -824,7 +816,6 @@ def fetch_daily_card_from_db(today_date_str):
             cur.execute(query, (today_date_str,))
             row = cur.fetchone()
             if row and row.get('card_data'):
-                # Handle dict conversion if loaded as string JSON
                 data = row['card_data']
                 return json.loads(data) if isinstance(data, str) else data
         except Exception as e:
@@ -833,7 +824,7 @@ def fetch_daily_card_from_db(today_date_str):
         return None
 
 def save_daily_card_to_db(today_date_str, card_data):
-    """Saves a newly fetched Scryfall card for today's date into Supabase via SQL UPSERT."""
+    import json
     query = """
         INSERT INTO daily_card (card_date, card_data, created_at)
         VALUES (%s::date, %s, NOW())
