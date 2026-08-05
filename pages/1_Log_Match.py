@@ -9,18 +9,26 @@ active_session_key = st.session_state.get("user_role", "Logger")
 if "form_v" not in st.session_state:
     st.session_state.form_v = 0
 
-# --- 1. INITIAL LOAD FROM DB ---
-if "timer_running" not in st.session_state:
-    db_session = db.fetch_live_session(active_session_key)
-    st.session_state.timer_running = db_session["timer_running"]
-    st.session_state.timer_start_time = db_session["timer_start_time"]
-    st.session_state.timer_elapsed_seconds = db_session["timer_elapsed_seconds"]
-    st.session_state.live_turn_count = db_session["live_turn_count"]
+def init_session_state_from_db():
+    """Deferred loader to prevent container startup locks."""
+    if "timer_running" not in st.session_state:
+        try:
+            db_session = db.fetch_live_session(active_session_key)
+            st.session_state.timer_running = db_session["timer_running"]
+            st.session_state.timer_start_time = db_session["timer_start_time"]
+            st.session_state.timer_elapsed_seconds = db_session["timer_elapsed_seconds"]
+            st.session_state.live_turn_count = db_session["live_turn_count"]
 
-    db_draft = db.fetch_live_pod_draft(active_session_key) if hasattr(db, 'fetch_live_pod_draft') else {}
-    if isinstance(db_draft, dict):
-        for k, v in db_draft.items():
-            st.session_state[k] = v
+            db_draft = db.fetch_live_pod_draft(active_session_key) if hasattr(db, 'fetch_live_pod_draft') else {}
+            if isinstance(db_draft, dict):
+                for k, v in db_draft.items():
+                    st.session_state[k] = v
+        except Exception as e:
+            # Fallback values if DB is unreachable during boot
+            st.session_state.timer_running = False
+            st.session_state.timer_start_time = None
+            st.session_state.timer_elapsed_seconds = 0
+            st.session_state.live_turn_count = 1
 
 def sync_companion_to_db():
     db.update_live_session(
@@ -62,6 +70,9 @@ def clear_form_selections():
         st.session_state[f"seat_deck_id_owned_{seat}"] = None
         st.session_state[f"seat_mull_{seat}"] = 0
         st.session_state[f"seat_win_{seat}"] = False
+
+# SAFELY INITIALIZE DB STATE ONLY AFTER STREAMLIT BOOTS
+init_session_state_from_db()
 
 # Reset skip flag on render start
 st.session_state.skip_draft_save = False
@@ -291,10 +302,11 @@ else:
                 selected_player_id = player_dict[selected_player_name]
                 if is_borrowing:
                     if all_global_decks:
-                        global_deck_map = {d['deck_id']: f"{d['deck_name']} (Owner: {d['owner_name']})" for d in all_global_decks}
+                        global_deck_map = {int(d['deck_id']): f"{d['deck_name']} (Owner: {d['owner_name']})" for d in all_global_decks}
                         g_deck_ids = list(global_deck_map.keys())
                         
-                        saved_bd_id = st.session_state.get(bdk, None)
+                        raw_bd_id = st.session_state.get(bdk, None)
+                        saved_bd_id = int(raw_bd_id) if raw_bd_id is not None and str(raw_bd_id).isdigit() else None
                         bd_idx = g_deck_ids.index(saved_bd_id) if saved_bd_id in g_deck_ids else None
 
                         selected_deck_id = st.selectbox(
@@ -312,10 +324,11 @@ else:
                 else:
                     available_decks = db.fetch_player_decks(selected_player_id)
                     if available_decks:
-                        owned_deck_map = {d['deck_id']: f"{d['deck_name']} (⚡ Bracket {d.get('bracket', 3)})" for d in available_decks}
+                        owned_deck_map = {int(d['deck_id']): f"{d['deck_name']} (⚡ Bracket {d.get('bracket', 3)})" for d in available_decks}
                         o_deck_ids = list(owned_deck_map.keys())
                         
-                        saved_od_id = st.session_state.get(odk, None)
+                        raw_od_id = st.session_state.get(odk, None)
+                        saved_od_id = int(raw_od_id) if raw_od_id is not None and str(raw_od_id).isdigit() else None
                         od_idx = o_deck_ids.index(saved_od_id) if saved_od_id in o_deck_ids else None
 
                         selected_deck_id = st.selectbox(
