@@ -24,21 +24,32 @@ if not DATABASE_URL:
 
 @contextmanager
 def get_db():
-    """Context manager for Supabase PostgreSQL connection."""
+    """Context manager for Supabase PostgreSQL connection with strict timeout guard."""
     if not DATABASE_URL:
         raise ValueError(
             "DATABASE_URL is missing. Please add DATABASE_URL = \"your_connection_string\" "
             "in Streamlit Cloud's Secrets manager (Settings -> Secrets) or in your local .env file."
         )
         
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+    try:
+        # Added connect_timeout=3 so connection hangs fail fast instead of locking the container
+        conn = psycopg2.connect(
+            DATABASE_URL, 
+            cursor_factory=RealDictCursor,
+            connect_timeout=3
+        )
+    except Exception as e:
+        print(f"Database Connection Error: {e}")
+        st.error("⚠️ Unable to connect to the database. Please check connection string / secrets.")
+        raise e
+
     try:
         yield conn
         conn.commit()
     except Exception as e:
         conn.rollback()
-        print(f"Database Error: {e}")
-        raise
+        print(f"Database Query Error: {e}")
+        raise e
     finally:
         conn.close()
 
