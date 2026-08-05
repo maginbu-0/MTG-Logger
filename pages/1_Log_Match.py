@@ -9,7 +9,7 @@ active_session_key = st.session_state.get("user_role", "Logger")
 if "form_v" not in st.session_state:
     st.session_state.form_v = 0
 
-# --- 1. INITIAL LOAD / REFRESH FROM DB ---
+# --- 1. INITIAL LOAD FROM DB ---
 if "timer_running" not in st.session_state:
     db_session = db.fetch_live_session(active_session_key)
     st.session_state.timer_running = db_session["timer_running"]
@@ -186,7 +186,8 @@ else:
             min_value=1, 
             max_value=50, 
             value=int(st.session_state.get("input_total_turns", 8)), 
-            key=f"input_total_turns_{fv}"
+            key=f"input_total_turns_{fv}",
+            on_change=save_current_draft_to_db
         )
     with col2:
         duration = st.number_input(
@@ -194,7 +195,8 @@ else:
             min_value=1, 
             max_value=500, 
             value=int(st.session_state.get("input_duration", 45)), 
-            key=f"input_duration_{fv}"
+            key=f"input_duration_{fv}",
+            on_change=save_current_draft_to_db
         )
     with col3:
         bracket_options = [1, 2, 3, 4, 5]
@@ -204,7 +206,8 @@ else:
             "Game Bracket", 
             options=bracket_options, 
             index=b_idx, 
-            key=f"input_bracket_{fv}"
+            key=f"input_bracket_{fv}",
+            on_change=save_current_draft_to_db
         )
     with col4:
         medium_options = ["In Person 🃏", "Convoke 💻", "SpellTable 📹"]
@@ -214,7 +217,8 @@ else:
             "Platform / Medium", 
             options=medium_options, 
             index=m_idx, 
-            key=f"input_medium_{fv}"
+            key=f"input_medium_{fv}",
+            on_change=save_current_draft_to_db
         )
 
     win_options = ["Combat Damage", "Infinite Combo", "Alternate Win-Con", "Commander Damage", "Scoop / Surrender"]
@@ -226,7 +230,8 @@ else:
         win_options,
         index=w_idx,
         placeholder="How did it end?",
-        key=f"input_win_condition_{fv}"
+        key=f"input_win_condition_{fv}",
+        on_change=save_current_draft_to_db
     )
 
     st.divider()
@@ -236,7 +241,13 @@ else:
         p_num_opt = [3, 4]
         curr_p_num = int(st.session_state.get("input_num_players", 4))
         p_num_idx = p_num_opt.index(curr_p_num) if curr_p_num in p_num_opt else 1
-        num_players = st.selectbox("Number of Players", options=p_num_opt, index=p_num_idx, key=f"input_num_players_{fv}")
+        num_players = st.selectbox(
+            "Number of Players", 
+            options=p_num_opt, 
+            index=p_num_idx, 
+            key=f"input_num_players_{fv}",
+            on_change=save_current_draft_to_db
+        )
 
     st.subheader("Participants")
     participants_input = []
@@ -259,7 +270,8 @@ else:
                 player_names, 
                 index=p_idx, 
                 placeholder="Select player...", 
-                key=f"{pk}_{fv}"
+                key=f"{pk}_{fv}",
+                on_change=save_current_draft_to_db
             )
             st.session_state[pk] = selected_player_name
             
@@ -267,7 +279,8 @@ else:
             is_borrowing = st.checkbox(
                 "🎁 Borrowing a deck from someone else?", 
                 value=saved_b_val,
-                key=f"{bk}_{fv}"
+                key=f"{bk}_{fv}",
+                on_change=save_current_draft_to_db
             )
             st.session_state[bk] = is_borrowing
             
@@ -290,7 +303,8 @@ else:
                             format_func=lambda did: global_deck_map.get(did, ""),
                             index=bd_idx, 
                             placeholder="Select borrowed deck...", 
-                            key=f"{bdk}_{fv}"
+                            key=f"{bdk}_{fv}",
+                            on_change=save_current_draft_to_db
                         )
                         st.session_state[bdk] = selected_deck_id
                     else:
@@ -310,7 +324,8 @@ else:
                             format_func=lambda did: owned_deck_map.get(did, ""),
                             index=od_idx, 
                             placeholder="Select deck...", 
-                            key=f"{odk}_{fv}"
+                            key=f"{odk}_{fv}",
+                            on_change=save_current_draft_to_db
                         )
                         st.session_state[odk] = selected_deck_id
                     else:
@@ -321,11 +336,11 @@ else:
             col_mull, col_win = st.columns(2)
             with col_mull:
                 saved_mull = int(st.session_state.get(mk, 0))
-                mulligans = st.number_input("Mulligans", 0, 7, value=saved_mull, key=f"{mk}_{fv}")
+                mulligans = st.number_input("Mulligans", 0, 7, value=saved_mull, key=f"{mk}_{fv}", on_change=save_current_draft_to_db)
                 st.session_state[mk] = mulligans
             with col_win:
                 saved_win = bool(st.session_state.get(wk, False))
-                is_winner = st.checkbox("Winner 🏆", value=saved_win, key=f"{wk}_{fv}")
+                is_winner = st.checkbox("Winner 🏆", value=saved_win, key=f"{wk}_{fv}", on_change=save_current_draft_to_db)
                 st.session_state[wk] = is_winner
 
             participants_input.append({
@@ -336,11 +351,8 @@ else:
                 "is_winner": is_winner
             })
 
-    notes = st.text_input("Match Notes (Optional)", placeholder="e.g. Turn 6 Rhystic Study went unanswered", value=st.session_state.get("input_match_notes", ""), key=f"input_match_notes_{fv}")
+    notes = st.text_input("Match Notes (Optional)", placeholder="e.g. Turn 6 Rhystic Study went unanswered", value=st.session_state.get("input_match_notes", ""), key=f"input_match_notes_{fv}", on_change=save_current_draft_to_db)
     st.session_state["input_match_notes"] = notes
-    
-    # Save draft state on render without blocking UI execution
-    save_current_draft_to_db()
 
     col_save1, col_save2 = st.columns(2)
     with col_save1:
