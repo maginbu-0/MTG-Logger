@@ -7,27 +7,19 @@ import db
 st.subheader("🃏 Scryfall Card of the Day")
 
 def format_mana_symbols(text: str) -> str:
-    """
-    Replaces bracketed MTG symbols like {U}, {4}, {W/P}, {T} 
-    with inline SVG mana symbol icons from Scryfall.
-    """
     if not text:
         return ""
-    
     def symbol_replacer(match):
-        raw_symbol = match.group(1).replace("/", "")  # e.g., 'W/P' -> 'WP'
+        raw_symbol = match.group(1).replace("/", "")
         svg_url = f"https://svgs.scryfall.io/card-symbols/{raw_symbol.upper()}.svg"
         return (
             f'<img src="{svg_url}" '
             f'style="height: 1.1em; width: 1.1em; vertical-align: -0.15em; margin: 0 1px; display: inline-block;" '
             f'alt="{{{raw_symbol}}}"/>'
         )
-
-    # Match anything inside curly braces, e.g. {U}, {4}, {T}
     return re.sub(r'\{([A-Za-z0-9/]+)\}', symbol_replacer, text)
 
 def parse_scryfall_payload(data):
-    """Extracts card fields with robust fallbacks for special layouts/sets."""
     image_url = None
     if "image_uris" in data:
         image_url = data["image_uris"].get("normal") or data["image_uris"].get("large")
@@ -83,68 +75,68 @@ def get_or_fetch_daily_card():
         if response.status_code == 200:
             data = response.json()
             card_payload = parse_scryfall_payload(data)
-            
             db.save_daily_card_to_db(today_str, card_payload)
-            
             card_payload["date"] = today_str
             card_payload["source"] = "Scryfall API (Fresh)"
             return {"success": True, "card": card_payload}
         else:
             return {"success": False, "error": f"Scryfall HTTP {response.status_code}"}
-            
     except Exception as e:
         return {"success": False, "error": str(e)}
 
-res = get_or_fetch_daily_card()
+@st.fragment
+def render_daily_card_fragment():
+    res = get_or_fetch_daily_card()
 
-if not res or not res.get("success"):
-    err_msg = res.get("error", "Unknown error")
-    st.error(f"⚠️ Failed to load Card of the Day: {err_msg}")
-else:
-    card = res["card"]
-    date_display = card.get("date", datetime.now(timezone.utc).strftime("%Y-%m-%d"))
-    source_display = card.get("source", "Supabase DB")
-    
-    st.caption(f"🗓️ Fixed Card for **{date_display}** (Rotates daily at 00:00 UTC | Source: {source_display})")
-    
-    col_img, col_info = st.columns([1, 1.2])
-    
-    with col_img:
-        if card.get("image_url"):
-            st.image(card["image_url"], use_container_width=True)
-        else:
-            st.info("No card image available for this print.")
+    if not res or not res.get("success"):
+        err_msg = res.get("error", "Unknown error")
+        st.error(f"⚠️ Failed to load Card of the Day: {err_msg}")
+    else:
+        card = res["card"]
+        date_display = card.get("date", datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+        source_display = card.get("source", "Supabase DB")
+        
+        st.caption(f"🗓️ Fixed Card for **{date_display}** (Rotates daily at 00:00 UTC | Source: {source_display})")
+        
+        col_img, col_info = st.columns([1, 1.2])
+        
+        with col_img:
+            if card.get("image_url"):
+                st.image(card["image_url"], use_container_width=True)
+            else:
+                st.info("No card image available for this print.")
 
-    with col_info:
-        st.title(card.get("name", "Unknown Card"))
-        
-        formatted_cost = format_mana_symbols(card.get("mana_cost", ""))
-        st.markdown(f"**Mana Cost:** {formatted_cost}", unsafe_allow_html=True)
-        st.markdown(f"**Type:** {card.get('type_line', 'N/A')}")
-        st.markdown(f"**Set:** {card.get('set_name', 'N/A')}")
-        st.markdown(f"**Est. Price (USD):** `${card.get('prices', 'N/A')}`")
-        
-        st.divider()
-        st.markdown("#### 📜 Card Text / Description")
-        
-        formatted_oracle = format_mana_symbols(card.get("oracle_text", "*No oracle text.*"))
-        # Render oracle text inside a custom card box with rendered mana symbols
-        st.markdown(
-            f'<div style="background-color: #1e293b; padding: 15px; border-radius: 8px; line-height: 1.6; border: 1px solid #334155;">'
-            f'{formatted_oracle}'
-            f'</div>',
-            unsafe_allow_html=True
-        )
-        
-        if card.get("flavor_text"):
-            st.caption(f"*\"{card['flavor_text']}\"*")
+        with col_info:
+            st.title(card.get("name", "Unknown Card"))
             
-        st.markdown(f"🎨 **Artist:** {card.get('artist', 'Unknown')}")
-        st.markdown(f"[View on Scryfall]({card.get('scryfall_uri', '#')})")
+            formatted_cost = format_mana_symbols(card.get("mana_cost", ""))
+            st.markdown(f"**Mana Cost:** {formatted_cost}", unsafe_allow_html=True)
+            st.markdown(f"**Type:** {card.get('type_line', 'N/A')}")
+            st.markdown(f"**Set:** {card.get('set_name', 'N/A')}")
+            st.markdown(f"**Est. Price (USD):** `${card.get('prices', 'N/A')}`")
+            
+            st.divider()
+            st.markdown("#### 📜 Card Text / Description")
+            
+            formatted_oracle = format_mana_symbols(card.get("oracle_text", "*No oracle text.*"))
+            st.markdown(
+                f'<div style="background-color: #1e293b; padding: 15px; border-radius: 8px; line-height: 1.6; border: 1px solid #334155;">'
+                f'{formatted_oracle}'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+            
+            if card.get("flavor_text"):
+                st.caption(f"*\"{card['flavor_text']}\"*")
+                
+            st.markdown(f"🎨 **Artist:** {card.get('artist', 'Unknown')}")
+            st.markdown(f"[View on Scryfall]({card.get('scryfall_uri', '#')})")
 
-    st.divider()
-    if st.button("🔄 Clear Today's DB Cache & Fetch New Card", type="secondary"):
-        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        db.save_daily_card_to_db(today_str, {})
-        st.toast("Cleared DB cache for today!", icon="🧹")
-        st.rerun()
+        st.divider()
+        if st.button("🔄 Clear Today's DB Cache & Fetch New Card", type="secondary"):
+            today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            db.save_daily_card_to_db(today_str, {})
+            st.toast("Cleared DB cache for today!", icon="🧹")
+            st.rerun()
+
+render_daily_card_fragment()
