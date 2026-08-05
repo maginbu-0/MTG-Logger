@@ -8,7 +8,7 @@ st.set_page_config(
 
 st.title("🛡️ Commander Tracker")
 
-# --- PIN AUTHENTICATION (SIDEBAR) ---
+# --- PIN AUTHENTICATION ---
 ADMIN_PIN = st.secrets.get("ADMIN_PIN", "1234")
 LOGGER_PIN = st.secrets.get("LOGGER_PIN", "5678")
 
@@ -17,7 +17,6 @@ if "user_role" not in st.session_state:
 
 with st.sidebar:
     st.header("🔒 Access Control")
-    
     if st.session_state.user_role == "Viewer":
         entered_pin = st.text_input("Enter PIN to unlock features", type="password")
         if st.button("Unlock"):
@@ -37,10 +36,9 @@ with st.sidebar:
             st.session_state.user_role = "Viewer"
             st.rerun()
 
-# --- PAGE ROUTING BASED ON ROLE (CLEAN FILENAMES) ---
 role = st.session_state.user_role
 
-# Page definitions
+# Page definitions - ENSURE THESE FILENAMES MATCH YOUR EXACT GITHUB PAGE FILES
 analytics_page = st.Page("pages/4_Analytics.py", title="Analytics", icon="📊")
 log_page = st.Page("pages/1_Log_Match.py", title="Log Match", icon="⚔️")
 add_deck_page = st.Page("pages/2_Add_Deck.py", title="Add Deck", icon="➕")
@@ -49,8 +47,6 @@ deck_admin_page = st.Page("pages/5_Deck_Admin.py", title="Deck & Player Admin", 
 match_admin_page = st.Page("pages/6_Match_Admin.py", title="Match Admin", icon="✏️")
 random_card_page = st.Page("pages/7_Random_Card.py", title="Random Card of the Day", icon="🎲")
 
-
-# Analytics is now FIRST in every list, making it the default landing page
 if role == "Admin":
     pg = st.navigation([analytics_page, log_page, add_deck_page, recap_page, deck_admin_page, match_admin_page, random_card_page])
 elif role == "Logger":
