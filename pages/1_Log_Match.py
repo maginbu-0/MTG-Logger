@@ -204,13 +204,19 @@ else:
     col_d1, _ = st.columns([1, 1])
     with col_d1:
         raw_saved_date = st.session_state.get("input_match_date", get_ast_today())
+        
+        # Ensure value passed to st.date_input is strictly a datetime.date object
         if isinstance(raw_saved_date, str):
             try:
                 saved_date = datetime.datetime.strptime(raw_saved_date, "%Y-%m-%d").date()
             except ValueError:
                 saved_date = get_ast_today()
-        else:
+        elif isinstance(raw_saved_date, datetime.datetime):
+            saved_date = raw_saved_date.date()
+        elif isinstance(raw_saved_date, datetime.date):
             saved_date = raw_saved_date
+        else:
+            saved_date = get_ast_today()
 
         match_date = st.date_input(
             "📅 Match Date", 
