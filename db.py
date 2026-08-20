@@ -544,17 +544,31 @@ def create_deck(player_id, deck_name, commander_ids, bracket=3):
     st.cache_data.clear()
     return deck_id
 
-def log_game_session(game_data, participants):
-    query_game = """
-        INSERT INTO games (total_turns, duration_minutes, win_condition, notes, bracket, medium, played_at) 
-        VALUES (%s, %s, %s, %s, %s, %s, NOW() - INTERVAL '4 hours') 
-        RETURNING game_id;
-    """
-    query_game_fallback = """
-        INSERT INTO games (total_turns, duration_minutes, win_condition, notes, bracket, medium) 
-        VALUES (%s, %s, %s, %s, %s, %s) 
-        RETURNING game_id;
-    """
+def log_game_session(game_data, participants, match_date=None):
+    # Use selected date or default to current timestamp
+    if match_date:
+        query_game = """
+            INSERT INTO games (total_turns, duration_minutes, win_condition, notes, bracket, medium, played_at) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s::timestamp + TIME '20:00:00') 
+            RETURNING game_id;
+        """
+        query_game_fallback = """
+            INSERT INTO games (total_turns, duration_minutes, win_condition, notes, bracket, medium) 
+            VALUES (%s, %s, %s, %s, %s, %s) 
+            RETURNING game_id;
+        """
+    else:
+        query_game = """
+            INSERT INTO games (total_turns, duration_minutes, win_condition, notes, bracket, medium, played_at) 
+            VALUES (%s, %s, %s, %s, %s, %s, NOW() - INTERVAL '4 hours') 
+            RETURNING game_id;
+        """
+        query_game_fallback = """
+            INSERT INTO games (total_turns, duration_minutes, win_condition, notes, bracket, medium) 
+            VALUES (%s, %s, %s, %s, %s, %s) 
+            RETURNING game_id;
+        """
+
     query_participant = """
         INSERT INTO game_participants (game_id, seat_position, player_id, deck_id, mulligan_count, is_winner)
         VALUES (%s, %s, %s, %s, %s, %s);
@@ -562,14 +576,25 @@ def log_game_session(game_data, participants):
     with get_db() as conn:
         cur = conn.cursor()
         try:
-            cur.execute(query_game, (
-                game_data['total_turns'],
-                game_data['duration_minutes'],
-                game_data['win_condition'],
-                game_data['notes'],
-                game_data['bracket'],
-                game_data['medium']
-            ))
+            if match_date:
+                cur.execute(query_game, (
+                    game_data['total_turns'],
+                    game_data['duration_minutes'],
+                    game_data['win_condition'],
+                    game_data['notes'],
+                    game_data['bracket'],
+                    game_data['medium'],
+                    str(match_date)
+                ))
+            else:
+                cur.execute(query_game, (
+                    game_data['total_turns'],
+                    game_data['duration_minutes'],
+                    game_data['win_condition'],
+                    game_data['notes'],
+                    game_data['bracket'],
+                    game_data['medium']
+                ))
         except Exception:
             conn.rollback()
             cur.execute(query_game_fallback, (

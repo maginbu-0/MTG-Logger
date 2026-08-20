@@ -1,6 +1,11 @@
 import streamlit as st
 import time
+import datetime
+from zoneinfo import ZoneInfo
 import db
+
+def get_ast_today():
+    return datetime.datetime.now(ZoneInfo("America/Santo_Domingo")).date()
 
 st.subheader("⚔️ Live Match Companion & Logger")
 
@@ -23,7 +28,7 @@ def init_session_state_from_db():
             if isinstance(db_draft, dict):
                 for k, v in db_draft.items():
                     st.session_state[k] = v
-        except Exception as e:
+        except Exception:
             # Fallback values if DB is unreachable during boot
             st.session_state.timer_running = False
             st.session_state.timer_start_time = None
@@ -44,17 +49,22 @@ def save_current_draft_to_db():
         return
     if hasattr(db, 'update_live_pod_draft'):
         POD_KEYS_PREFIXES = ("seat_player_", "seat_borrow_", "seat_deck_id_borrowed_", "seat_deck_id_owned_", "seat_mull_", "seat_win_", "input_")
-        draft = {k: v for k, v in st.session_state.items() if any(k.startswith(p) for p in POD_KEYS_PREFIXES) and v is not None}
+        # Convert date object to ISO string for JSON draft compatibility if present
+        draft = {}
+        for k, v in st.session_state.items():
+            if any(k.startswith(p) for p in POD_KEYS_PREFIXES) and v is not None:
+                draft[k] = str(v) if isinstance(v, (datetime.date, datetime.datetime)) else v
         db.update_live_pod_draft(active_session_key, draft)
 
 def clear_form_selections():
-    """Completely wipes session state keys & clears Supabase."""
+    """Completely wipes session state keys & clears Supabase draft."""
     st.session_state.saved_pod_state = {}
     st.session_state.skip_draft_save = True
     
     if hasattr(db, 'update_live_pod_draft'):
         db.update_live_pod_draft(active_session_key, {})
     
+    st.session_state.input_match_date = get_ast_today()
     st.session_state.input_total_turns = 8
     st.session_state.input_duration = 45
     st.session_state.input_win_condition = None
@@ -71,7 +81,7 @@ def clear_form_selections():
         st.session_state[f"seat_mull_{seat}"] = 0
         st.session_state[f"seat_win_{seat}"] = False
 
-# SAFELY INITIALIZE DB STATE ONLY AFTER STREAMLIT BOOTS
+# SAFELY INITIALIZE DB STATE ONLY AFTER STREAMLIT MOUNTS
 init_session_state_from_db()
 
 # Reset skip flag on render start
@@ -189,6 +199,26 @@ else:
     all_global_decks = db.fetch_all_decks_with_owners() if hasattr(db, 'fetch_all_decks_with_owners') else []
 
     fv = st.session_state.form_v
+
+    # DATE SELECTION ROW
+    col_d1, _ = st.columns([1, 1])
+    with col_d1:
+        raw_saved_date = st.session_state.get("input_match_date", get_ast_today())
+        if isinstance(raw_saved_date, str):
+            try:
+                saved_date = datetime.datetime.strptime(raw_saved_date, "%Y-%m-%d").date()
+            except ValueError:
+                saved_date = get_ast_today()
+        else:
+            saved_date = raw_saved_date
+
+        match_date = st.date_input(
+            "📅 Match Date", 
+            value=saved_date, 
+            key=f"input_match_date_{fv}",
+            on_change=save_current_draft_to_db
+        )
+        st.session_state["input_match_date"] = match_date
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -395,7 +425,8 @@ else:
                 "bracket": bracket_level,
                 "medium": game_medium
             }
-            db.log_game_session(game_data, participants_input)
+            # Log session passing the selected match_date
+            db.log_game_session(game_data, participants_input, match_date=match_date)
             
             # Reset live timer companion
             st.session_state.timer_running = False
@@ -408,11 +439,11 @@ else:
                 # FULL CLEAR: reset memory state and wipe Supabase draft
                 clear_form_selections()
                 st.session_state.form_v += 1
-                st.toast("Game logged & form cleared!", icon="🧹")
+                st.toast(f"Game logged for {match_date.strftime('%b %d, %Y')} & form cleared!", icon="🧹")
                 st.rerun()
 
             elif rematch_submit:
-                # REMATCH CLEAR: wipe win condition, notes, mulligans, winners BUT KEEP players & decks
+                # REMATCH CLEAR: wipe win condition, notes, mulligans, winners BUT KEEP players, decks & date
                 st.session_state.form_v += 1
                 st.session_state.input_win_condition = None
                 st.session_state.input_match_notes = ""
@@ -421,5 +452,5 @@ else:
                     st.session_state[f"seat_win_{seat}"] = False
                 
                 save_current_draft_to_db()
-                st.toast("Game logged! Ready for Rematch with same pod & decks!", icon="🔁")
+                st.toast(f"Game logged for {match_date.strftime('%b %d, %Y')}! Ready for Rematch!", icon="🔁")
                 st.rerun()
