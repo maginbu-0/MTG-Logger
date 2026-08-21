@@ -46,7 +46,7 @@ recap_page = st.Page("pages/3_Daily_Recap.py", title="Daily Recap", icon="📋")
 deck_admin_page = st.Page("pages/5_Deck_Admin.py", title="Deck & Player Admin", icon="🛠️")
 match_admin_page = st.Page("pages/6_Match_Admin.py", title="Match Admin", icon="✏️")
 random_card_page = st.Page("pages/7_Random_Card.py", title="Random Card of the Day", icon="🎲")
-monthly_recap_page = st.Page("pages/8_monthly_recap.py", title="Monthly Recap", icon="🏆")
+monthly_recap_page = st.Page("pages/8_Monthly_Recap.py", title="Monthly Recap", icon="🏆")
 
 if role == "Admin":
     pg = st.navigation([analytics_page, log_page, add_deck_page, recap_page, deck_admin_page, match_admin_page, random_card_page, monthly_recap_page])
