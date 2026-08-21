@@ -867,11 +867,8 @@ def save_daily_card_to_db(today_date_str, card_data):
 
 @st.cache_data(ttl=300)
 def fetch_monthly_session_summary(year: int, month: int):
-    # Construct start and end dates formatted YYYY-MM-01 and YYYY-MM-31
-    import calendar
-    _, last_day = calendar.monthrange(year, month)
-    start_date = f"{year}-{month:02d}-01"
-    end_date = f"{year}-{month:02d}-{last_day:02d}"
+    # Formats target month as YYYY-MM (e.g. '2026-08')
+    year_month_str = f"{year}-{month:02d}"
 
     with get_db() as conn:
         cur = conn.cursor()
@@ -884,12 +881,26 @@ def fetch_monthly_session_summary(year: int, month: int):
                 ROUND(AVG(g.duration_minutes), 0) AS avg_duration,
                 COALESCE(SUM(g.duration_minutes), 0) AS total_playtime
             FROM games g
-            WHERE TO_CHAR(g.played_at - INTERVAL '4 hours', 'YYYY-MM-DD') BETWEEN %s AND %s;
+            WHERE TO_CHAR(g.played_at AT TIME ZONE 'America/Santo_Domingo', 'YYYY-MM') = %s;
         """
-        cur.execute(query_overview, (start_date, end_date))
-        overview = cur.fetchone()
+        query_overview_fallback = """
+            SELECT 
+                COUNT(DISTINCT g.game_id) AS total_games,
+                ROUND(AVG(g.total_turns), 1) AS avg_turns,
+                ROUND(AVG(g.duration_minutes), 0) AS avg_duration,
+                COALESCE(SUM(g.duration_minutes), 0) AS total_playtime
+            FROM games g
+            WHERE TO_CHAR(g.played_at - INTERVAL '4 hours', 'YYYY-MM') = %s;
+        """
+        try:
+            cur.execute(query_overview, (year_month_str,))
+            overview = cur.fetchone()
+        except Exception:
+            conn.rollback()
+            cur.execute(query_overview_fallback, (year_month_str,))
+            overview = cur.fetchone()
         
-        if not overview or overview['total_games'] == 0:
+        if not overview or overview['total_games'] == 0 or overview['total_games'] is None:
             return None
             
         # 2. Monthly Player Leaderboard
@@ -902,11 +913,11 @@ def fetch_monthly_session_summary(year: int, month: int):
             FROM game_participants gp
             JOIN games g ON gp.game_id = g.game_id
             JOIN players p ON gp.player_id = p.player_id
-            WHERE TO_CHAR(g.played_at - INTERVAL '4 hours', 'YYYY-MM-DD') BETWEEN %s AND %s
+            WHERE TO_CHAR(g.played_at - INTERVAL '4 hours', 'YYYY-MM') = %s
             GROUP BY p.player_id, p.display_name
             ORDER BY wins DESC, games_played ASC;
         """
-        cur.execute(query_players, (start_date, end_date))
+        cur.execute(query_players, (year_month_str,))
         players_summary = cur.fetchall()
         
         # 3. Monthly Deck Performance Summary
@@ -921,11 +932,11 @@ def fetch_monthly_session_summary(year: int, month: int):
             JOIN games g ON gp.game_id = g.game_id
             JOIN decks d ON gp.deck_id = d.deck_id
             JOIN players p ON gp.player_id = p.player_id
-            WHERE TO_CHAR(g.played_at - INTERVAL '4 hours', 'YYYY-MM-DD') BETWEEN %s AND %s
+            WHERE TO_CHAR(g.played_at - INTERVAL '4 hours', 'YYYY-MM') = %s
             GROUP BY d.deck_id, d.deck_name, p.display_name
             ORDER BY wins DESC, games_played ASC;
         """
-        cur.execute(query_decks, (start_date, end_date))
+        cur.execute(query_decks, (year_month_str,))
         decks_summary = cur.fetchall()
         
         return {
