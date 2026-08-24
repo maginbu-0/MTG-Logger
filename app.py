@@ -93,9 +93,9 @@ random_card_page = st.Page("pages/7_Random_Card.py", title="Random Card of the D
 monthly_recap_page = st.Page("pages/8_Monthly_Recap.py", title="Monthly Recap", icon="🏆")
 
 if role == "Admin":
-    pg = st.navigation([analytics_page, log_page, add_deck_page, recap_page, deck_admin_page, match_admin_page, random_card_page, monthly_recap_page])
+    pg = st.navigation([log_page, analytics_page, add_deck_page, recap_page, deck_admin_page, match_admin_page, random_card_page, monthly_recap_page])
 elif role == "Logger":
-    pg = st.navigation([analytics_page, log_page, add_deck_page, recap_page, random_card_page, monthly_recap_page])
+    pg = st.navigation([log_page, analytics_page, add_deck_page, recap_page, random_card_page, monthly_recap_page])
 else:
     st.info("ℹ️ You are in Read-Only mode. Enter a PIN in the sidebar to log games or add decks.")
     pg = st.navigation([analytics_page, recap_page, random_card_page, monthly_recap_page])
