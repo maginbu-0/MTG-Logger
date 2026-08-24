@@ -1,5 +1,4 @@
 import streamlit as st
-from streamlit_cookies_controller import CookieController
 import db
 
 st.set_page_config(
@@ -8,19 +7,42 @@ st.set_page_config(
     layout="centered"
 )
 
-# Initialize Client-Side Cookie Controller
-controller = CookieController()
+# --- JAVASCRIPT LOCALSTORAGE PERSISTENCE BRIDGE ---
+# Intercepts mobile/desktop reloads and syncs localStorage token to Streamlit query params
+st.components.v1.html(
+    """
+    <script>
+        (function() {
+            const STORAGE_KEY = 'edh_tracker_session_token';
+            const urlParams = new URLSearchParams(window.parent.location.search);
+            const urlToken = urlParams.get('session_token');
+            const localToken = localStorage.getItem(STORAGE_KEY);
+
+            // 1. If stored token exists on phone/PC but missing from URL (e.g. fresh refresh/PWA launch)
+            if (localToken && !urlToken) {
+                urlParams.set('session_token', localToken);
+                window.parent.location.search = urlParams.toString();
+            }
+            // 2. If token present in URL, ensure device localStorage matches
+            else if (urlToken && urlToken !== localToken) {
+                localStorage.setItem(STORAGE_KEY, urlToken);
+            }
+        })();
+    </script>
+    """,
+    height=0,
+)
 
 st.title("🛡️ Commander Tracker")
 
-# --- PIN AUTHENTICATION (TRUE COOKIE PERSISTENCE) ---
+# --- PIN AUTHENTICATION (SUPABASE + DEVICE LOCALSTORAGE) ---
 ADMIN_PIN = st.secrets.get("ADMIN_PIN", "1234")
 LOGGER_PIN = st.secrets.get("LOGGER_PIN", "5678")
 
-# 1. Fetch persistent cookie token directly from mobile browser
-device_token = controller.get("edh_session_token")
+# Fetch persistent device token (restored via JS bridge above)
+device_token = st.query_params.get("session_token", None)
 
-# 2. Restore session state from Supabase if uninitialized
+# Restore role from Supabase DB on load or refresh
 if "user_role" not in st.session_state:
     verified_role = db.verify_device_session(device_token) if device_token else None
     if verified_role in ["Admin", "Logger"]:
@@ -42,12 +64,20 @@ with st.sidebar:
                 st.error("Invalid PIN")
 
             if target_role:
-                # Create token in Supabase
+                # 1. Generate persistent session in Supabase
                 new_token = db.create_device_session(target_role)
                 st.session_state.user_role = target_role
+                st.query_params["session_token"] = new_token
                 
-                # Write 30-day persistent cookie directly to device storage
-                controller.set("edh_session_token", new_token, max_age=2592000)
+                # 2. Save token into phone/PC permanent localStorage
+                st.components.v1.html(
+                    f"""
+                    <script>
+                        localStorage.setItem('edh_tracker_session_token', '{new_token}');
+                    </script>
+                    """,
+                    height=0,
+                )
                 st.toast(f"Unlocked {target_role} Access (Saved to Device)!", icon="🔑")
                 st.rerun()
     else:
@@ -56,7 +86,18 @@ with st.sidebar:
             if device_token:
                 db.revoke_device_session(device_token)
             st.session_state.user_role = "Viewer"
-            controller.remove("edh_session_token")
+            if "session_token" in st.query_params:
+                del st.query_params["session_token"]
+            
+            # Wipe token from device storage
+            st.components.v1.html(
+                """
+                <script>
+                    localStorage.removeItem('edh_tracker_session_token');
+                </script>
+                """,
+                height=0,
+            )
             st.toast("Logged out!", icon="🔒")
             st.rerun()
 
