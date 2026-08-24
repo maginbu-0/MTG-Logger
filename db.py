@@ -983,10 +983,10 @@ def fetch_all_active_usernames():
             return []
 
 def create_device_session(role: str, user_name: str = None) -> str:
-    """Creates a persistent session token linked to a role and user_name."""
+    """Creates a permanent 30-year session token linked to a role and user_name."""
     query = """
         INSERT INTO user_sessions (user_role, user_name, expires_at) 
-        VALUES (%s, %s, NOW() + INTERVAL '30 days') 
+        VALUES (%s, %s, NOW() + INTERVAL '30 years') 
         RETURNING device_token;
     """
     with get_db() as conn:
@@ -1030,14 +1030,23 @@ def revoke_device_session(token_str: str):
 # Add this inside db.py under Authentication & Session Management
 
 def create_session_for_user(username: str) -> str:
-    """Creates a 30-day device token in user_sessions mapped directly to a registered app_user."""
-    query = """
+    """Reuses an existing token or creates a permanent (30-year) token for a user."""
+    # 1. Check for an active existing token first
+    query_existing = """
+        SELECT device_token 
+        FROM user_sessions 
+        WHERE LOWER(user_name) = LOWER(%s) AND expires_at > NOW()
+        ORDER BY created_at DESC 
+        LIMIT 1;
+    """
+    # 2. Insert new 30-year token if none exists
+    query_new = """
         INSERT INTO user_sessions (device_token, user_role, user_name, expires_at)
         SELECT 
             gen_random_uuid(), 
             role, 
             username, 
-            NOW() + INTERVAL '30 days'
+            NOW() + INTERVAL '30 years'
         FROM app_users
         WHERE LOWER(username) = LOWER(%s)
         RETURNING device_token;
@@ -1045,10 +1054,15 @@ def create_session_for_user(username: str) -> str:
     with get_db() as conn:
         cur = conn.cursor()
         try:
-            cur.execute(query, (username,))
+            cur.execute(query_existing, (username,))
             row = cur.fetchone()
             if row:
                 return str(row['device_token'])
+            
+            cur.execute(query_new, (username,))
+            row_new = cur.fetchone()
+            if row_new:
+                return str(row_new['device_token'])
         except Exception:
             conn.rollback()
     return None
