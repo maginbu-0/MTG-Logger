@@ -1,4 +1,5 @@
 import streamlit as st
+import extra_streamlit_components as stx
 
 st.set_page_config(
     page_title="EDH Tracker",
@@ -6,14 +7,23 @@ st.set_page_config(
     layout="centered"
 )
 
+# Initialize Cookie Manager
+cookie_manager = stx.CookieManager()
+
 st.title("🛡️ Commander Tracker")
 
-# --- PIN AUTHENTICATION ---
+# --- PIN AUTHENTICATION (WITH COOKIE PERSISTENCE) ---
 ADMIN_PIN = st.secrets.get("ADMIN_PIN", "1234")
 LOGGER_PIN = st.secrets.get("LOGGER_PIN", "5678")
 
+# Fetch saved role from browser cookie if session state is empty
+saved_role_cookie = cookie_manager.get("edh_user_role")
+
 if "user_role" not in st.session_state:
-    st.session_state.user_role = "Viewer"
+    if saved_role_cookie in ["Admin", "Logger"]:
+        st.session_state.user_role = saved_role_cookie
+    else:
+        st.session_state.user_role = "Viewer"
 
 with st.sidebar:
     st.header("🔒 Access Control")
@@ -22,11 +32,14 @@ with st.sidebar:
         if st.button("Unlock"):
             if entered_pin == ADMIN_PIN:
                 st.session_state.user_role = "Admin"
-                st.toast("Unlocked Admin Access!", icon="🔑")
+                # Set cookie valid for 12 hours (43200 seconds)
+                cookie_manager.set("edh_user_role", "Admin", max_age=43200, key="set_admin_cookie")
+                st.toast("Unlocked Admin Access (Saved to Device)!", icon="🔑")
                 st.rerun()
             elif entered_pin == LOGGER_PIN:
                 st.session_state.user_role = "Logger"
-                st.toast("Unlocked Logger Access!", icon="⚔️")
+                cookie_manager.set("edh_user_role", "Logger", max_age=43200, key="set_logger_cookie")
+                st.toast("Unlocked Logger Access (Saved to Device)!", icon="⚔️")
                 st.rerun()
             else:
                 st.error("Invalid PIN")
@@ -34,6 +47,8 @@ with st.sidebar:
         st.success(f"Current Role: **{st.session_state.user_role}**")
         if st.button("Lock / Log Out"):
             st.session_state.user_role = "Viewer"
+            cookie_manager.delete("edh_user_role", key="delete_role_cookie")
+            st.toast("Logged out and removed device key.", icon="🔒")
             st.rerun()
 
 role = st.session_state.user_role
