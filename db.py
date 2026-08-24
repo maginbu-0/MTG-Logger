@@ -4,6 +4,7 @@ from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 from contextlib import contextmanager
 import streamlit as st
+import hashlib
 
 # Load local .env file if running locally
 load_dotenv()
@@ -545,7 +546,6 @@ def create_deck(player_id, deck_name, commander_ids, bracket=3):
     return deck_id
 
 def log_game_session(game_data, participants, match_date=None):
-    # Use selected date or default to current timestamp
     if match_date:
         query_game = """
             INSERT INTO games (total_turns, duration_minutes, win_condition, notes, bracket, medium, played_at) 
@@ -864,16 +864,13 @@ def save_daily_card_to_db(today_date_str, card_data):
             conn.rollback()
             print(f"Error saving daily card to DB: {e}")
 
-
 @st.cache_data(ttl=300)
 def fetch_monthly_session_summary(year: int, month: int):
-    # Formats target month as YYYY-MM (e.g. '2026-08')
     year_month_str = f"{year}-{month:02d}"
 
     with get_db() as conn:
         cur = conn.cursor()
         
-        # 1. Monthly Overview Metrics
         query_overview = """
             SELECT 
                 COUNT(DISTINCT g.game_id) AS total_games,
@@ -903,7 +900,6 @@ def fetch_monthly_session_summary(year: int, month: int):
         if not overview or overview['total_games'] == 0 or overview['total_games'] is None:
             return None
             
-        # 2. Monthly Player Leaderboard
         query_players = """
             SELECT 
                 p.display_name AS player_name,
@@ -920,7 +916,6 @@ def fetch_monthly_session_summary(year: int, month: int):
         cur.execute(query_players, (year_month_str,))
         players_summary = cur.fetchall()
         
-        # 3. Monthly Deck Performance Summary
         query_decks = """
             SELECT 
                 d.deck_name,
@@ -945,27 +940,67 @@ def fetch_monthly_session_summary(year: int, month: int):
             "decks": [dict(r) for r in decks_summary]
         }
 
+# ------------------------------------------------------------------------------
+# AUTHENTICATION & SESSION MANAGEMENT
+# ------------------------------------------------------------------------------
 
+def hash_pin(pin: str) -> str:
+    """Hashes a raw PIN using SHA-256."""
+    return hashlib.sha256(pin.encode('utf-8')).hexdigest()
 
-def create_device_session(role: str) -> str:
-    """Creates a persistent 30-day session token in Supabase and returns the UUID."""
+def verify_user_credentials(username: str, entered_pin: str):
+    """Verifies username and hashed PIN against Supabase app_users table."""
+    if not username or not entered_pin:
+        return None
+    
+    hashed_input = hash_pin(entered_pin)
     query = """
-        INSERT INTO user_sessions (user_role, expires_at) 
-        VALUES (%s, NOW() + INTERVAL '30 days') 
+        SELECT username, role 
+        FROM app_users 
+        WHERE LOWER(username) = LOWER(%s) AND pin_hash = %s;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute(query, (username, hashed_input))
+            row = cur.fetchone()
+            if row:
+                return {"user_name": row['username'], "user_role": row['role']}
+        except Exception:
+            conn.rollback()
+    return None
+
+def fetch_all_active_usernames():
+    """Fetches list of registered usernames for the login drop-down."""
+    query = "SELECT username FROM app_users ORDER BY username ASC;"
+    with get_db() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute(query)
+            return [r['username'] for r in cur.fetchall()]
+        except Exception:
+            conn.rollback()
+            return []
+
+def create_device_session(role: str, user_name: str = None) -> str:
+    """Creates a persistent session token linked to a role and user_name."""
+    query = """
+        INSERT INTO user_sessions (user_role, user_name, expires_at) 
+        VALUES (%s, %s, NOW() + INTERVAL '30 days') 
         RETURNING device_token;
     """
     with get_db() as conn:
         cur = conn.cursor()
-        cur.execute(query, (role,))
+        cur.execute(query, (role, user_name))
         token = cur.fetchone()['device_token']
     return str(token)
 
 def verify_device_session(token_str: str):
-    """Verifies if a device token is valid and returns the associated role."""
+    """Verifies a device token and returns a dictionary with role and user_name."""
     if not token_str:
         return None
     query = """
-        SELECT user_role 
+        SELECT user_role, user_name 
         FROM user_sessions 
         WHERE device_token = %s::uuid AND expires_at > NOW();
     """
@@ -975,7 +1010,7 @@ def verify_device_session(token_str: str):
             cur.execute(query, (token_str,))
             row = cur.fetchone()
             if row:
-                return row['user_role']
+                return {"user_role": row['user_role'], "user_name": row['user_name']}
         except Exception:
             conn.rollback()
     return None
