@@ -6,6 +6,19 @@ st.set_page_config(
     layout="centered"
 )
 
+# Optional: Add automatic app refresh (e.g. rerun every 60 seconds)
+# Adjust interval (in milliseconds) as needed
+st.components.v1.html(
+    """
+    <script>
+        setTimeout(function(){
+            window.parent.postMessage({type: 'streamlit:rerun'}, '*');
+        }, 60000);
+    </script>
+    """,
+    height=0,
+)
+
 st.title("🛡️ Commander Tracker")
 
 # --- PIN AUTHENTICATION (WITH PERSISTENT DEVICE SESSION) ---
