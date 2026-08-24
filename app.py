@@ -7,6 +7,33 @@ st.set_page_config(
     layout="centered"
 )
 
+# --- FORCE iOS WEBAPP MANIFEST TO PRESERVE DEVICE KEY ---
+device_token = st.query_params.get("device_key") or st.query_params.get("session_token")
+
+if device_token:
+    # Injects apple-mobile-web-app-capable meta tag with the active token locked into start_url
+    st.components.v1.html(
+        f"""
+        <script>
+            let meta = document.createElement('meta');
+            meta.name = 'apple-mobile-web-app-title';
+            meta.content = 'Commander Tracker';
+            document.getElementsByTagName('head')[0].appendChild(meta);
+
+            let link = document.createElement('link');
+            link.rel = 'manifest';
+            link.href = 'data:application/manifest+json,' + encodeURIComponent(JSON.stringify({{
+                "name": "Commander Tracker",
+                "short_name": "EDH Tracker",
+                "start_url": "/?device_key={device_token}",
+                "display": "standalone"
+            }}));
+            document.getElementsByTagName('head')[0].appendChild(link);
+        </script>
+        """,
+        height=0,
+    )
+
 st.title("🛡️ Commander Tracker")
 
 # --- AUTHENTICATION (PIN + PERMANENT DEVICE KEY) ---
