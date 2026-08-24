@@ -34,7 +34,7 @@ Generates a user entry with a SHA-256 hashed PIN:
 -- Syntax: SELECT upsert_app_user('Username', 'PIN', 'Role');
 
 -- Example: Add an Admin
-SELECT upsert_app_user('Caleb', '1234', 'Admin');
+SELECT upsert_app_user('User', '1234', 'Admin');
 
 -- Example: Add a Logger
-SELECT upsert_app_user('Nikki', '5678', 'Logger');
+SELECT upsert_app_user('User', '5678', 'Logger');
