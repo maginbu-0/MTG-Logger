@@ -944,3 +944,50 @@ def fetch_monthly_session_summary(year: int, month: int):
             "players": [dict(r) for r in players_summary],
             "decks": [dict(r) for r in decks_summary]
         }
+
+
+
+def create_device_session(role: str) -> str:
+    """Creates a persistent 30-day session token in Supabase and returns the UUID."""
+    query = """
+        INSERT INTO user_sessions (user_role, expires_at) 
+        VALUES (%s, NOW() + INTERVAL '30 days') 
+        RETURNING device_token;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        cur.execute(query, (role,))
+        token = cur.fetchone()['device_token']
+    return str(token)
+
+def verify_device_session(token_str: str):
+    """Verifies if a device token is valid and returns the associated role."""
+    if not token_str:
+        return None
+    query = """
+        SELECT user_role 
+        FROM user_sessions 
+        WHERE device_token = %s::uuid AND expires_at > NOW();
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute(query, (token_str,))
+            row = cur.fetchone()
+            if row:
+                return row['user_role']
+        except Exception:
+            conn.rollback()
+    return None
+
+def revoke_device_session(token_str: str):
+    """Deletes a device session token upon logout."""
+    if not token_str:
+        return
+    query = "DELETE FROM user_sessions WHERE device_token = %s::uuid;"
+    with get_db() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute(query, (token_str,))
+        except Exception:
+            conn.rollback()

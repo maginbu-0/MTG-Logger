@@ -1,4 +1,5 @@
 import streamlit as st
+import db
 
 st.set_page_config(
     page_title="EDH Tracker",
@@ -6,30 +7,20 @@ st.set_page_config(
     layout="centered"
 )
 
-# Optional: Add automatic app refresh (e.g. rerun every 60 seconds)
-# Adjust interval (in milliseconds) as needed
-st.components.v1.html(
-    """
-    <script>
-        setTimeout(function(){
-            window.parent.postMessage({type: 'streamlit:rerun'}, '*');
-        }, 60000);
-    </script>
-    """,
-    height=0,
-)
-
 st.title("🛡️ Commander Tracker")
 
-# --- PIN AUTHENTICATION (WITH PERSISTENT DEVICE SESSION) ---
+# --- PIN AUTHENTICATION (SUPABASE DEVICE PERSISTENCE) ---
 ADMIN_PIN = st.secrets.get("ADMIN_PIN", "1234")
 LOGGER_PIN = st.secrets.get("LOGGER_PIN", "5678")
 
-# 1. Check URL parameters on load if session state is uninitialized
+# Fetch persistent device token from URL query params
+device_token = st.query_params.get("session_token", None)
+
+# 1. Restore role from Supabase DB on fresh page reload
 if "user_role" not in st.session_state:
-    saved_role = st.query_params.get("role", "Viewer")
-    if saved_role in ["Admin", "Logger"]:
-        st.session_state.user_role = saved_role
+    verified_role = db.verify_device_session(device_token) if device_token else None
+    if verified_role in ["Admin", "Logger"]:
+        st.session_state.user_role = verified_role
     else:
         st.session_state.user_role = "Viewer"
 
@@ -38,30 +29,35 @@ with st.sidebar:
     if st.session_state.user_role == "Viewer":
         entered_pin = st.text_input("Enter PIN to unlock features", type="password")
         if st.button("Unlock"):
+            target_role = None
             if entered_pin == ADMIN_PIN:
-                st.session_state.user_role = "Admin"
-                st.query_params["role"] = "Admin"
-                st.toast("Unlocked Admin Access (Session Saved)!", icon="🔑")
-                st.rerun()
+                target_role = "Admin"
             elif entered_pin == LOGGER_PIN:
-                st.session_state.user_role = "Logger"
-                st.query_params["role"] = "Logger"
-                st.toast("Unlocked Logger Access (Session Saved)!", icon="⚔️")
-                st.rerun()
+                target_role = "Logger"
             else:
                 st.error("Invalid PIN")
+
+            if target_role:
+                # Store token in Supabase and bind to URL
+                new_token = db.create_device_session(target_role)
+                st.session_state.user_role = target_role
+                st.query_params["session_token"] = new_token
+                st.toast(f"Unlocked {target_role} Access (Saved to Device)!", icon="🔑")
+                st.rerun()
     else:
         st.success(f"Current Role: **{st.session_state.user_role}**")
         if st.button("Lock / Log Out"):
+            if device_token:
+                db.revoke_device_session(device_token)
             st.session_state.user_role = "Viewer"
-            if "role" in st.query_params:
-                del st.query_params["role"]
+            if "session_token" in st.query_params:
+                del st.query_params["session_token"]
             st.toast("Logged out!", icon="🔒")
             st.rerun()
 
 role = st.session_state.user_role
 
-# Page definitions - ENSURE THESE FILENAMES MATCH YOUR EXACT GITHUB PAGE FILES
+# Page definitions
 analytics_page = st.Page("pages/4_Analytics.py", title="Analytics", icon="📊")
 log_page = st.Page("pages/1_Log_Match.py", title="Log Match", icon="⚔️")
 add_deck_page = st.Page("pages/2_Add_Deck.py", title="Add Deck", icon="➕")
