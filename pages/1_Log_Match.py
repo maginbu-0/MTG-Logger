@@ -15,7 +15,7 @@ if "form_v" not in st.session_state:
     st.session_state.form_v = 0
 
 def init_session_state_from_db():
-    """Deferred loader to prevent container startup locks."""
+    """Deferred loader to prevent container startup locks & normalize types."""
     if "timer_running" not in st.session_state:
         try:
             db_session = db.fetch_live_session(active_session_key)
@@ -27,7 +27,14 @@ def init_session_state_from_db():
             db_draft = db.fetch_live_pod_draft(active_session_key) if hasattr(db, 'fetch_live_pod_draft') else {}
             if isinstance(db_draft, dict):
                 for k, v in db_draft.items():
-                    st.session_state[k] = v
+                    # Parse date strings back into native datetime.date objects on restoration
+                    if k == "input_match_date" and isinstance(v, str):
+                        try:
+                            st.session_state[k] = datetime.datetime.strptime(v, "%Y-%m-%d").date()
+                        except ValueError:
+                            st.session_state[k] = get_ast_today()
+                    else:
+                        st.session_state[k] = v
         except Exception:
             # Fallback values if DB is unreachable during boot
             st.session_state.timer_running = False
@@ -205,7 +212,7 @@ else:
     with col_d1:
         raw_saved_date = st.session_state.get("input_match_date", get_ast_today())
         
-        # Ensure value passed to st.date_input is strictly a datetime.date object
+        # Strict defensive type check to prevent Streamlit TypeError on logout/rerun
         if isinstance(raw_saved_date, str):
             try:
                 saved_date = datetime.datetime.strptime(raw_saved_date, "%Y-%m-%d").date()
