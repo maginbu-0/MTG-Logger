@@ -7,16 +7,43 @@ st.set_page_config(
     layout="centered"
 )
 
+# --- JAVASCRIPT LOCALSTORAGE BRIDGE FOR MOBILE PERSISTENCE ---
+def sync_device_token_js():
+    """Injects JS to automatically sync token between browser localStorage and Python query_params."""
+    st.components.v1.html(
+        """
+        <script>
+            // 1. Read token from device localStorage
+            const localToken = localStorage.getItem('edh_session_token');
+            const urlParams = new URLSearchParams(window.parent.location.search);
+            const urlToken = urlParams.get('session_token');
+
+            // 2. If token exists in localStorage but not in URL, push to URL and rerun
+            if (localToken && !urlToken) {
+                urlParams.set('session_token', localToken);
+                window.parent.location.search = urlParams.toString();
+            } 
+            // 3. If token in URL differs from localStorage, save to localStorage
+            else if (urlToken && urlToken !== localToken) {
+                localStorage.setItem('edh_session_token', urlToken);
+            }
+        </script>
+        """,
+        height=0,
+    )
+
+sync_device_token_js()
+
 st.title("🛡️ Commander Tracker")
 
-# --- PIN AUTHENTICATION (SUPABASE DEVICE PERSISTENCE) ---
+# --- PIN AUTHENTICATION (SUPABASE + LOCALSTORAGE DEVICE PERSISTENCE) ---
 ADMIN_PIN = st.secrets.get("ADMIN_PIN", "1234")
 LOGGER_PIN = st.secrets.get("LOGGER_PIN", "5678")
 
-# Fetch persistent device token from URL query params
+# Fetch persistent device token from URL query params (populated via JS sync above)
 device_token = st.query_params.get("session_token", None)
 
-# 1. Restore role from Supabase DB on fresh page reload
+# Restore role from Supabase DB on fresh page reload
 if "user_role" not in st.session_state:
     verified_role = db.verify_device_session(device_token) if device_token else None
     if verified_role in ["Admin", "Logger"]:
@@ -38,11 +65,21 @@ with st.sidebar:
                 st.error("Invalid PIN")
 
             if target_role:
-                # Store token in Supabase and bind to URL
+                # Store token in Supabase DB
                 new_token = db.create_device_session(target_role)
                 st.session_state.user_role = target_role
                 st.query_params["session_token"] = new_token
-                st.toast(f"Unlocked {target_role} Access (Saved to Device)!", icon="🔑")
+                
+                # Save token into phone's permanent localStorage
+                st.components.v1.html(
+                    f"""
+                    <script>
+                        localStorage.setItem('edh_session_token', '{new_token}');
+                    </script>
+                    """,
+                    height=0,
+                )
+                st.toast(f"Unlocked {target_role} Access (Saved to Phone)!", icon="🔑")
                 st.rerun()
     else:
         st.success(f"Current Role: **{st.session_state.user_role}**")
@@ -52,6 +89,16 @@ with st.sidebar:
             st.session_state.user_role = "Viewer"
             if "session_token" in st.query_params:
                 del st.query_params["session_token"]
+                
+            # Clear token from phone localStorage
+            st.components.v1.html(
+                """
+                <script>
+                    localStorage.removeItem('edh_session_token');
+                </script>
+                """,
+                height=0,
+            )
             st.toast("Logged out!", icon="🔒")
             st.rerun()
 
