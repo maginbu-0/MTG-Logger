@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit as st
 import db
 
 st.set_page_config(
@@ -10,7 +9,7 @@ st.set_page_config(
 
 st.title("🛡️ Commander Tracker")
 
-# --- AUTHENTICATION (DEVICE TOKEN & USER-PIN VERIFICATION) ---
+# --- AUTHENTICATION (MAGIC LINK OR MANUAL PIN) ---
 device_token = st.query_params.get("device_key") or st.query_params.get("session_token")
 
 # 1. Restore role & username from Supabase DB on load or refresh
@@ -36,23 +35,30 @@ with st.sidebar:
         entered_pin = st.text_input("Enter PIN", type="password")
         
         if st.button("Unlock"):
+            # Verify against app_users table
             user_info = db.verify_user_credentials(selected_user, entered_pin)
             if user_info:
                 target_role = user_info["user_role"]
                 target_name = user_info["user_name"]
                 
-                # Create persistent session in Supabase tied to the username
-                new_token = db.create_device_session(target_role, user_name=target_name)
+                # Create persistent session in user_sessions mapped to app_users row
+                new_token = db.create_session_for_user(target_name)
+                
                 st.session_state.user_role = target_role
                 st.session_state.user_name = target_name
-                st.query_params["device_key"] = new_token
+                if new_token:
+                    st.query_params["device_key"] = new_token
                 
-                st.toast(f"Welcome, {target_name} ({target_role})!", icon="🔑")
+                st.toast(f"Welcome back, {target_name}!", icon="🔑")
                 st.rerun()
             else:
                 st.error("Invalid Username or PIN")
     else:
-        st.success(f"Welcome, **{st.session_state.user_name}** ({st.session_state.user_role})")
+        st.success(f"Logged in as: **{st.session_state.user_name}** ({st.session_state.user_role})")
+        if device_token:
+            st.caption("📱 **Bookmark your shortcut link:**")
+            st.code(f"https://your-app-name.streamlit.app/?device_key={device_token}", language="text")
+
         if st.button("Lock / Log Out"):
             if device_token:
                 db.revoke_device_session(device_token)

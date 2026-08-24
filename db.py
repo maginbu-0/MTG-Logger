@@ -1026,3 +1026,29 @@ def revoke_device_session(token_str: str):
             cur.execute(query, (token_str,))
         except Exception:
             conn.rollback()
+
+# Add this inside db.py under Authentication & Session Management
+
+def create_session_for_user(username: str) -> str:
+    """Creates a 30-day device token in user_sessions mapped directly to a registered app_user."""
+    query = """
+        INSERT INTO user_sessions (device_token, user_role, user_name, expires_at)
+        SELECT 
+            gen_random_uuid(), 
+            role, 
+            username, 
+            NOW() + INTERVAL '30 days'
+        FROM app_users
+        WHERE LOWER(username) = LOWER(%s)
+        RETURNING device_token;
+    """
+    with get_db() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute(query, (username,))
+            row = cur.fetchone()
+            if row:
+                return str(row['device_token'])
+        except Exception:
+            conn.rollback()
+    return None
