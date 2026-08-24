@@ -1,6 +1,14 @@
 import streamlit as st
 import extra_streamlit_components as stx
 
+# Initialize auth state at the entry point so redirects don't wipe it
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+if not st.session_state["authenticated"]:
+    # Render login form or stop execution
+    st.stop()
+
 st.set_page_config(
     page_title="EDH Tracker",
     page_icon="⚔️",
