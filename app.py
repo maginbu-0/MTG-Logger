@@ -13,10 +13,10 @@ st.title("🛡️ Commander Tracker")
 ADMIN_PIN = st.secrets.get("ADMIN_PIN", "1234")
 LOGGER_PIN = st.secrets.get("LOGGER_PIN", "5678")
 
-# 1. Check for device key in URL (e.g., from Mobile Home Screen Shortcut)
-device_token = st.query_params.get("device_key", None) or st.query_params.get("session_token", None)
+# Fetch persistent token from query params
+device_token = st.query_params.get("device_key") or st.query_params.get("session_token")
 
-# 2. Verify token against Supabase or fall back to Viewer
+# Restore role from Supabase DB on load or refresh
 if "user_role" not in st.session_state:
     verified_role = db.verify_device_session(device_token) if device_token else None
     if verified_role in ["Admin", "Logger"]:
@@ -49,10 +49,7 @@ with st.sidebar:
             if device_token:
                 db.revoke_device_session(device_token)
             st.session_state.user_role = "Viewer"
-            if "device_key" in st.query_params:
-                del st.query_params["device_key"]
-            if "session_token" in st.query_params:
-                del st.query_params["session_token"]
+            st.query_params.clear()
             st.toast("Logged out!", icon="🔒")
             st.rerun()
 
