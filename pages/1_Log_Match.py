@@ -1,11 +1,12 @@
+from datetime import datetime, date
 import streamlit as st
 import time
-import datetime
 from zoneinfo import ZoneInfo
 import db
 
+
 def get_ast_today():
-    return datetime.datetime.now(ZoneInfo("America/Santo_Domingo")).date()
+    return datetime.now(ZoneInfo("America/Santo_Domingo")).date()
 
 st.subheader("⚔️ Live Match Companion & Logger")
 
@@ -30,7 +31,7 @@ def init_session_state_from_db():
                     # Parse date strings back into native datetime.date objects on restoration
                     if k == "input_match_date" and isinstance(v, str):
                         try:
-                            st.session_state[k] = datetime.datetime.strptime(v, "%Y-%m-%d").date()
+                            st.session_state[k] = datetime.strptime(v, "%Y-%m-%d").date()
                         except ValueError:
                             st.session_state[k] = get_ast_today()
                     else:
@@ -60,7 +61,7 @@ def save_current_draft_to_db():
         draft = {}
         for k, v in st.session_state.items():
             if any(k.startswith(p) for p in POD_KEYS_PREFIXES) and v is not None:
-                draft[k] = str(v) if isinstance(v, (datetime.date, datetime.datetime)) else v
+                draft[k] = str(v) if isinstance(v, (date, datetime)) else v
         db.update_live_pod_draft(active_session_key, draft)
 
 def clear_form_selections():
@@ -215,12 +216,12 @@ else:
         # Strict defensive type check to prevent Streamlit TypeError on logout/rerun
         if isinstance(raw_saved_date, str):
             try:
-                saved_date = datetime.datetime.strptime(raw_saved_date, "%Y-%m-%d").date()
+                saved_date = datetime.strptime(raw_saved_date, "%Y-%m-%d").date()
             except ValueError:
                 saved_date = get_ast_today()
-        elif isinstance(raw_saved_date, datetime.datetime):
+        elif isinstance(raw_saved_date, datetime):
             saved_date = raw_saved_date.date()
-        elif isinstance(raw_saved_date, datetime.date):
+        elif isinstance(raw_saved_date, date):
             saved_date = raw_saved_date
         else:
             saved_date = get_ast_today()
