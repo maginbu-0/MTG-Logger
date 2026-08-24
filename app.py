@@ -57,7 +57,7 @@ with st.sidebar:
         st.success(f"Logged in as: **{st.session_state.user_name}** ({st.session_state.user_role})")
         if device_token:
             st.caption("📱 **Bookmark your shortcut link:**")
-            st.code(f"https://your-app-name.streamlit.app/?device_key={device_token}", language="text")
+            st.code(f"https://edh-logger.streamlit.app/?device_key={device_token}", language="text")
 
         if st.button("Lock / Log Out"):
             if device_token:
