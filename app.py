@@ -1,4 +1,5 @@
 import streamlit as st
+from streamlit_cookies_controller import CookieController
 import db
 
 st.set_page_config(
@@ -7,16 +8,19 @@ st.set_page_config(
     layout="centered"
 )
 
+# Initialize Client-Side Cookie Controller
+controller = CookieController()
+
 st.title("🛡️ Commander Tracker")
 
-# --- PIN AUTHENTICATION (SUPABASE PERSISTENCE) ---
+# --- PIN AUTHENTICATION (TRUE COOKIE PERSISTENCE) ---
 ADMIN_PIN = st.secrets.get("ADMIN_PIN", "1234")
 LOGGER_PIN = st.secrets.get("LOGGER_PIN", "5678")
 
-# 1. Fetch persistent token from URL parameter
-device_token = st.query_params.get("session_token", None)
+# 1. Fetch persistent cookie token directly from mobile browser
+device_token = controller.get("edh_session_token")
 
-# 2. Restore role from Supabase DB on load or refresh
+# 2. Restore session state from Supabase if uninitialized
 if "user_role" not in st.session_state:
     verified_role = db.verify_device_session(device_token) if device_token else None
     if verified_role in ["Admin", "Logger"]:
@@ -38,27 +42,21 @@ with st.sidebar:
                 st.error("Invalid PIN")
 
             if target_role:
-                # Create persistent 30-day token in Supabase
+                # Create token in Supabase
                 new_token = db.create_device_session(target_role)
                 st.session_state.user_role = target_role
-                st.query_params["session_token"] = new_token
                 
-                # Show bookmark prompt for iOS PWA / Home Screen
-                st.toast(f"Unlocked {target_role} Access!", icon="🔑")
+                # Write 30-day persistent cookie directly to device storage
+                controller.set("edh_session_token", new_token, max_age=2592000)
+                st.toast(f"Unlocked {target_role} Access (Saved to Device)!", icon="🔑")
                 st.rerun()
     else:
         st.success(f"Current Role: **{st.session_state.user_role}**")
-        
-        # Display copyable quick-access link for Mobile / PWA
-        if device_token:
-            st.caption("📱 **Mobile Tip:** Bookmark or save this app with your token active to stay logged in forever.")
-            
         if st.button("Lock / Log Out"):
             if device_token:
                 db.revoke_device_session(device_token)
             st.session_state.user_role = "Viewer"
-            if "session_token" in st.query_params:
-                del st.query_params["session_token"]
+            controller.remove("edh_session_token")
             st.toast("Logged out!", icon="🔒")
             st.rerun()
 
