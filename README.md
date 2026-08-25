@@ -11,12 +11,14 @@ A full-stack web application designed to track, log, analyze, and manage Magic: 
 * **Turn Counter:** Interactive turn counter allowing players to update current turns on the fly.
 * **Auto-Fill Integration:** Automatically pushes final game duration and turn counts straight into the logging form when a match ends.
 * **Live Form Auto-Saving:** Saves in-progress pod details and draft states to the database so game inputs survive accidental reloads or page refreshes.
+* **Retroactive Date Picker:** Allows logging matches retroactively with specific match dates.
 * **Timezone Alignment:** Normalizes all match dates and timestamps to local time (`America/Santo_Domingo`).
 
 ### 📊 Analytics & Reporting Dashboards
 * **Player Leaderboards:** Win rates, total games played, and victory conditions categorized per player.
 * **Deck Analytics:** Performance summaries, color identity presence, deck bracket performance, and ownership stats.
 * **Daily & Monthly Recaps:** Dedicated session summaries aggregating overall pod trends, top performing players, and standout decks across specific days or calendar months.
+* **Group Chat Summary Exporter:** Formats monthly pod performance data into a clean, copyable summary ready for Discord or group chats.
 * **Random Card of the Day:** Integrates daily card highlights for your playgroup.
 
 ### 🛠️ Deck & Player Management
@@ -62,7 +64,10 @@ To ensure persistent login on mobile devices without browser session timeouts, u
 * **Infrastructure Setup:** Configured Streamlit deployment environment, established PostgreSQL database connection pools, and registered deployment SSH keys.
 
 ### 🗓️ August 9 – August 22, 2026
-* **Uptime Monitoring:** Configured automated ping services to maintain continuous app responsiveness and eliminate container cold starts.
+* **Monthly Recap & Group Chat Exporter:** Implemented the Monthly Recap dashboard aggregating pod stats, deck win rates, and generated copyable summaries for WhatsApp/Discord sharing.
+* **Retroactive Game Logging:** Integrated a custom date selector into the match logger to allow recording previous pod sessions while maintaining proper historical dates.
+* **Query & Timestamp Optimizations:** Refactored Supabase query logic to accurately handle timestamp interval offsets (`America/Santo_Domingo`) across monthly and daily aggregations.
+* **Uptime & Service Continuity:** Integrated automated UptimeRobot pings to maintain continuous app responsiveness and prevent Streamlit Cloud cold starts.
 
 ### 🗓️ August 24, 2026
 * **Form Deserialization Guard:** Resolved data serialization conflicts on date components, ensuring smooth form state recovery across sessions.
