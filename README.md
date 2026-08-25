@@ -1,33 +1,33 @@
 # 🛡️ EDH Tracker — Streamlit Commander Companion & Analytics App
 
-A full-stack web application designed to track, log, analyze, and manage Magic: The Gathering Commander (EDH) games[cite: 1, 2]. Built specifically for casual and competitive gaming pods, the app bridges live game companion tracking with post-game performance analytics, player statistics, and deck management[cite: 1, 3].
+A full-stack web application designed to track, log, analyze, and manage Magic: The Gathering Commander (EDH) games. Built specifically for casual and competitive gaming pods, the app bridges live game companion tracking with post-game performance analytics, player statistics, and deck management.
 
 ---
 
 ## ⚡ Key Features
 
 ### ⚔️ Live Match Companion & Logger
-* **Real-Time Match Timer:** Live timer fragment that tracks total playtime during matches[cite: 1].
-* **Turn Counter:** Interactive turn counter allowing players to update current turns on the fly[cite: 1].
-* **Auto-Fill Integration:** Automatically pushes final game duration and turn counts straight into the logging form when a match ends[cite: 1].
-* **Live Form Auto-Saving:** Saves in-progress pod details and draft states to the database so game inputs survive accidental reloads or page refreshes[cite: 1].
-* **Timezone Alignment:** Normalizes all match dates and timestamps to local time (`America/Santo_Domingo`)[cite: 1].
+* **Real-Time Match Timer:** Live timer fragment that tracks total playtime during matches.
+* **Turn Counter:** Interactive turn counter allowing players to update current turns on the fly.
+* **Auto-Fill Integration:** Automatically pushes final game duration and turn counts straight into the logging form when a match ends.
+* **Live Form Auto-Saving:** Saves in-progress pod details and draft states to the database so game inputs survive accidental reloads or page refreshes.
+* **Timezone Alignment:** Normalizes all match dates and timestamps to local time (`America/Santo_Domingo`).
 
 ### 📊 Analytics & Reporting Dashboards
-* **Player Leaderboards:** Win rates, total games played, and victory conditions categorized per player[cite: 1].
-* **Deck Analytics:** Performance summaries, color identity presence, deck bracket performance, and ownership stats[cite: 1].
-* **Daily & Monthly Recaps:** Dedicated session summaries aggregating overall pod trends, top performing players, and standout decks across specific days or calendar months[cite: 1].
-* **Random Card of the Day:** Integrates daily card highlights for your playgroup[cite: 1].
+* **Player Leaderboards:** Win rates, total games played, and victory conditions categorized per player.
+* **Deck Analytics:** Performance summaries, color identity presence, deck bracket performance, and ownership stats.
+* **Daily & Monthly Recaps:** Dedicated session summaries aggregating overall pod trends, top performing players, and standout decks across specific days or calendar months.
+* **Random Card of the Day:** Integrates daily card highlights for your playgroup.
 
 ### 🛠️ Deck & Player Management
-* **Moxfield Integration:** Pulls and syncs Commander decks directly from public Moxfield URLs[cite: 3].
-* **Color Identity & Bracket Tracking:** Automatically assigns commander color identities and tracks power levels / game brackets[cite: 1, 3].
-* **Global Deck Borrowing:** Accounts for players borrowing decks from other members of the pod during game logging[cite: 1].
+* **Moxfield Integration:** Pulls and syncs Commander decks directly from public Moxfield URLs.
+* **Color Identity & Bracket Tracking:** Automatically assigns commander color identities and tracks power levels / game brackets.
+* **Global Deck Borrowing:** Accounts for players borrowing decks from other members of the pod during game logging.
 
 ### 🔒 Security & Multi-User Access
-* **Salted PIN Encryption:** Secure PIN verification protecting administrative and logging capabilities[cite: 2].
-* **Role-Based Permissions:** Granular access controls dividing features between **Admin**, **Logger**, and **Viewer** roles[cite: 2, 4].
-* **Persistent Mobile Shortcuts:** Device token authentication allowing users to stay logged into their accounts permanently without typing passwords repeatedly[cite: 2, 4].
+* **Salted PIN Encryption:** Secure PIN verification protecting administrative and logging capabilities.
+* **Role-Based Permissions:** Granular access controls dividing features between **Admin**, **Logger**, and **Viewer** roles.
+* **Persistent Mobile Shortcuts:** Device token authentication allowing users to stay logged into their accounts permanently without typing passwords repeatedly.
 
 ---
 
@@ -46,9 +46,9 @@ A full-stack web application designed to track, log, analyze, and manage Magic: 
 To ensure persistent login on mobile devices without browser session timeouts, users are assigned device-specific tokens.
 
 ### Adding New Users
-1. **User Creation:** The Admin creates a new username, sets their role (**Admin** or **Logger**), and assigns a PIN. The system automatically hashes the PIN for storage[cite: 2].
-2. **Link Generation:** A unique 30-year device token is created and tied to that user's account[cite: 2, 4].
-3. **Magic Link:** The Admin sends the user their personalized direct URL containing their device token[cite: 4].
+1. **User Creation:** The Admin creates a new username, sets their role (**Admin** or **Logger**), and assigns a PIN. The system automatically hashes the PIN for storage.
+2. **Link Generation:** A unique 30-year device token is created and tied to that user's account.
+3. **Magic Link:** The Admin sends the user their personalized direct URL containing their device token.
 
 ### Mobile App Installation
 * **iOS (Apple Shortcuts Method):** Create a shortcut using the **Show Web Page** action pointing to the personalized link, then tap **Add to Home Screen**. This prevents Safari from stripping persistent URL parameters.
