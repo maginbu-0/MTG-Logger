@@ -67,6 +67,6 @@ To ensure persistent login on mobile devices without browser session timeouts, u
 ### 🗓️ August 24, 2026
 * **Form Deserialization Guard:** Resolved data serialization conflicts on date components, ensuring smooth form state recovery across sessions.
 * **iOS WebKit Workaround:** Developed path-based and shortcut-based workarounds to bypass iOS Safari's automatic URL parameter stripping on standalone WebApps.
-* **Cryptographic PIN Authentication:** Upgraded access security to SHA-256 salted PIN hashing paired with PostgreSQL database functions[cite: 2].
-* **Unified Multi-User Architecture:** Tied persistent device tokens directly to user profiles, allowing multiple distinct Admin and Logger accounts[cite: 2, 4].
-* **Session Deduplication & 30-Year Retention:** Configured device tokens to reuse existing active sessions upon manual login and extended persistence lifetimes to 30 years[cite: 2].
+* **Cryptographic PIN Authentication:** Upgraded access security to SHA-256 salted PIN hashing paired with PostgreSQL database functions.
+* **Unified Multi-User Architecture:** Tied persistent device tokens directly to user profiles, allowing multiple distinct Admin and Logger accounts.
+* **Session Deduplication & 30-Year Retention:** Configured device tokens to reuse existing active sessions upon manual login and extended persistence lifetimes to 30 years.
