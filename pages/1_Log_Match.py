@@ -28,8 +28,8 @@ def init_session_state_from_db():
             db_draft = db.fetch_live_pod_draft(active_session_key) if hasattr(db, 'fetch_live_pod_draft') else {}
             if isinstance(db_draft, dict):
                 for k, v in db_draft.items():
-                    # Parse date strings back into native datetime.date objects on restoration
-                    if k == "input_match_date" and isinstance(v, str):
+                    # Safely convert ISO date strings back into native datetime.date objects for any date key
+                    if ("date" in k or k == "input_match_date") and isinstance(v, str):
                         try:
                             st.session_state[k] = datetime.strptime(v, "%Y-%m-%d").date()
                         except ValueError:
@@ -57,11 +57,14 @@ def save_current_draft_to_db():
         return
     if hasattr(db, 'update_live_pod_draft'):
         POD_KEYS_PREFIXES = ("seat_player_", "seat_borrow_", "seat_deck_id_borrowed_", "seat_deck_id_owned_", "seat_mull_", "seat_win_", "input_")
-        # Convert date object to ISO string for JSON draft compatibility if present
         draft = {}
         for k, v in st.session_state.items():
             if any(k.startswith(p) for p in POD_KEYS_PREFIXES) and v is not None:
-                draft[k] = str(v) if isinstance(v, (date, datetime)) else v
+                if isinstance(v, (date, datetime)):
+                    formatted_date = v.strftime("%Y-%m-%d") if isinstance(v, (date, datetime)) else str(v)
+                    draft[k] = formatted_date
+                else:
+                    draft[k] = v
         db.update_live_pod_draft(active_session_key, draft)
 
 def clear_form_selections():
@@ -208,12 +211,11 @@ else:
 
     fv = st.session_state.form_v
 
-    # DATE SELECTION ROW
+    # DATE SELECTION ROW WITH GUARANTEED NATIVE TYPE CASTING
     col_d1, _ = st.columns([1, 1])
     with col_d1:
         raw_saved_date = st.session_state.get("input_match_date", get_ast_today())
         
-        # Strict defensive type check to prevent Streamlit TypeError on logout/rerun
         if isinstance(raw_saved_date, str):
             try:
                 saved_date = datetime.strptime(raw_saved_date, "%Y-%m-%d").date()
@@ -439,10 +441,8 @@ else:
                 "bracket": bracket_level,
                 "medium": game_medium
             }
-            # Log session passing the selected match_date
             db.log_game_session(game_data, participants_input, match_date=match_date)
             
-            # Reset live timer companion
             st.session_state.timer_running = False
             st.session_state.timer_start_time = None
             st.session_state.timer_elapsed_seconds = 0
@@ -450,14 +450,12 @@ else:
             db.update_live_session(active_session_key, False, None, 0, 1)
 
             if submit_match:
-                # FULL CLEAR: reset memory state and wipe Supabase draft
                 clear_form_selections()
                 st.session_state.form_v += 1
                 st.toast(f"Game logged for {match_date.strftime('%b %d, %Y')} & form cleared!", icon="🧹")
                 st.rerun()
 
             elif rematch_submit:
-                # REMATCH CLEAR: wipe win condition, notes, mulligans, winners BUT KEEP players, decks & date
                 st.session_state.form_v += 1
                 st.session_state.input_win_condition = None
                 st.session_state.input_match_notes = ""
