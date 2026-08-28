@@ -28,8 +28,10 @@ def init_session_state_from_db():
             db_draft = db.fetch_live_pod_draft(active_session_key) if hasattr(db, 'fetch_live_pod_draft') else {}
             if isinstance(db_draft, dict):
                 for k, v in db_draft.items():
-                    # Safely convert ISO date strings back into native datetime.date objects for any date key
-                    if ("date" in k or k == "input_match_date") and isinstance(v, str):
+                    # Ignore old cached draft dates on boot and always force AST today
+                    if "input_match_date" in k:
+                        st.session_state[k] = get_ast_today()
+                    elif ("date" in k) and isinstance(v, str):
                         try:
                             st.session_state[k] = datetime.strptime(v, "%Y-%m-%d").date()
                         except ValueError:
@@ -61,7 +63,7 @@ def save_current_draft_to_db():
         for k, v in st.session_state.items():
             if any(k.startswith(p) for p in POD_KEYS_PREFIXES) and v is not None:
                 if isinstance(v, (date, datetime)):
-                    formatted_date = v.strftime("%Y-%m-%d") if isinstance(v, (date, datetime)) else str(v)
+                    formatted_date = v.strftime("%Y-%m-%d")
                     draft[k] = formatted_date
                 else:
                     draft[k] = v
@@ -211,7 +213,7 @@ else:
 
     fv = st.session_state.form_v
 
-    # DATE SELECTION ROW WITH GUARANTEED NATIVE TYPE CASTING
+    # DATE SELECTION ROW WITH DEFAULT AST TODAY
     col_d1, _ = st.columns([1, 1])
     with col_d1:
         raw_saved_date = st.session_state.get("input_match_date", get_ast_today())
