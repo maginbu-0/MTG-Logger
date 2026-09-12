@@ -228,13 +228,13 @@ def fetch_daily_session_summary(selected_date):
     with get_db() as conn:
         cur = conn.cursor()
         
-        # 1. OVERVIEW QUERY
+        # 1. OVERVIEW QUERY (Strictly count distinct game IDs from games table)
         query_overview = """
             SELECT 
-                COUNT(DISTINCT g.game_id) AS total_games,
+                COUNT(g.game_id) AS total_games,
                 ROUND(AVG(g.total_turns), 1) AS avg_turns,
                 ROUND(AVG(g.duration_minutes), 0) AS avg_duration,
-                SUM(g.duration_minutes) AS total_playtime
+                COALESCE(SUM(g.duration_minutes), 0) AS total_playtime
             FROM games g
             WHERE TO_CHAR(g.played_at AT TIME ZONE 'America/Santo_Domingo', 'YYYY-MM-DD') = %s;
         """
@@ -248,9 +248,9 @@ def fetch_daily_session_summary(selected_date):
         query_players = """
             SELECT 
                 p.display_name AS player_name,
-                COUNT(gp.game_id) AS games_played,
+                COUNT(DISTINCT gp.game_id) AS games_played,
                 SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END) AS wins,
-                ROUND((SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END)::numeric / COUNT(gp.game_id)) * 100, 1) AS win_rate
+                ROUND((SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END)::numeric / COUNT(DISTINCT gp.game_id)) * 100, 1) AS win_rate
             FROM game_participants gp
             JOIN games g ON gp.game_id = g.game_id
             JOIN players p ON gp.player_id = p.player_id
@@ -266,9 +266,9 @@ def fetch_daily_session_summary(selected_date):
             SELECT 
                 d.deck_name,
                 p.display_name AS owner_name,
-                COUNT(gp.game_id) AS games_played,
+                COUNT(DISTINCT gp.game_id) AS games_played,
                 SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END) AS wins,
-                ROUND((SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END)::numeric / COUNT(gp.game_id)) * 100, 1) AS win_rate
+                ROUND((SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END)::numeric / COUNT(DISTINCT gp.game_id)) * 100, 1) AS win_rate
             FROM game_participants gp
             JOIN games g ON gp.game_id = g.game_id
             JOIN decks d ON gp.deck_id = d.deck_id
