@@ -171,7 +171,8 @@ def fetch_game_participants(game_id):
             return []
 
         participants = [dict(r) for r in rows]
-        participants.sort(key=lambda x: x.get('seat_number', x.get('seat_position', x.get('seat', 0))))
+        # Defensive sort guard: treats None values as 0 to avoid TypeError
+        participants.sort(key=lambda x: (x.get('seat_position') or x.get('seat_number') or x.get('seat') or 0))
         return participants
 
 @st.cache_data(ttl=300)
@@ -782,24 +783,15 @@ def update_full_game_match(game_id, total_turns, duration_minutes, win_condition
                     WHERE id = %s;
                 """, params_games)
 
+        # Remove existing participants first to prevent duplicate/phantom seats
+        cur.execute("DELETE FROM game_participants WHERE game_id = %s;", (game_id,))
+
+        # Re-insert the exact active list of participants
         for p in participants:
-            try:
-                cur.execute("""
-                    INSERT INTO game_participants (game_id, player_id, deck_id, mulligan_count, is_winner)
-                    VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (game_id, player_id) 
-                    DO UPDATE SET 
-                        deck_id = EXCLUDED.deck_id,
-                        mulligan_count = EXCLUDED.mulligan_count,
-                        is_winner = EXCLUDED.is_winner;
-                """, (game_id, p['player_id'], p['deck_id'], p['mulligan_count'], p['is_winner']))
-            except Exception:
-                conn.rollback()
-                cur.execute("""
-                    UPDATE game_participants 
-                    SET deck_id = %s, mulligan_count = %s, is_winner = %s
-                    WHERE game_id = %s AND player_id = %s;
-                """, (p['deck_id'], p['mulligan_count'], p['is_winner'], game_id, p['player_id']))
+            cur.execute("""
+                INSERT INTO game_participants (game_id, seat_position, player_id, deck_id, mulligan_count, is_winner)
+                VALUES (%s, %s, %s, %s, %s, %s);
+            """, (game_id, p['seat_position'], p['player_id'], p['deck_id'], p['mulligan_count'], p['is_winner']))
 
     st.cache_data.clear()
 
