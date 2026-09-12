@@ -45,14 +45,15 @@ def render_admin_matches_fragment():
                     st.markdown("#### 1. Match Details")
                     ecol1, ecol2, ecol3, ecol4 = st.columns(4)
                     
+                    # Bind game_to_edit_id directly to ensure widgets re-initialize on match switch
                     with ecol1:
-                        edit_turns = st.number_input("Turns", 1, 50, value=int(game_data.get('total_turns', 8)), key=f"edit_turns_{game_to_edit_id}")
+                        edit_turns = st.number_input("Turns", 1, 50, value=int(game_data.get('total_turns', 8)), key=f"edit_turns_g_{game_to_edit_id}")
                     with ecol2:
-                        edit_duration = st.number_input("Duration (mins)", 1, 500, value=int(game_data.get('duration_minutes', 45)), key=f"edit_dur_{game_to_edit_id}")
+                        edit_duration = st.number_input("Duration (mins)", 1, 500, value=int(game_data.get('duration_minutes', 45)), key=f"edit_dur_g_{game_to_edit_id}")
                     with ecol3:
                         raw_bracket = game_data.get('bracket')
                         bracket_idx = (int(raw_bracket) - 1) if raw_bracket and 1 <= int(raw_bracket) <= 5 else 2
-                        edit_bracket = st.selectbox("Bracket", [1, 2, 3, 4, 5], index=bracket_idx, key=f"edit_brack_{game_to_edit_id}")
+                        edit_bracket = st.selectbox("Bracket", [1, 2, 3, 4, 5], index=bracket_idx, key=f"edit_brack_g_{game_to_edit_id}")
 
                     with ecol4:
                         medium_opts = ["In Person 🃏", "Convoke 💻", "SpellTable 📹"]
@@ -64,16 +65,16 @@ def render_admin_matches_fragment():
                                 med_idx = idx
                                 break
             
-                        edit_medium = st.selectbox("Medium", medium_opts, index=med_idx, key=f"edit_med_{game_to_edit_id}")
+                        edit_medium = st.selectbox("Medium", medium_opts, index=med_idx, key=f"edit_med_g_{game_to_edit_id}")
 
                     edit_win_con = st.selectbox(
                         "Win Condition",
                         ["Combat Damage", "Infinite Combo", "Alternate Win-Con", "Commander Damage", "Scoop / Surrender"],
                         index=["Combat Damage", "Infinite Combo", "Alternate Win-Con", "Commander Damage", "Scoop / Surrender"].index(game_data['win_condition']) if game_data.get('win_condition') in ["Combat Damage", "Infinite Combo", "Alternate Win-Con", "Commander Damage", "Scoop / Surrender"] else 0,
-                        key=f"edit_wincon_{game_to_edit_id}"
+                        key=f"edit_wincon_g_{game_to_edit_id}"
                     )
                     
-                    edit_notes = st.text_input("Match Notes", value=game_data.get('notes', ''), key=f"edit_notes_{game_to_edit_id}")
+                    edit_notes = st.text_input("Match Notes", value=game_data.get('notes', ''), key=f"edit_notes_g_{game_to_edit_id}")
 
                     st.markdown("#### 2. Seats & Decks (Retroactive Fixes)")
                     updated_seats = []
@@ -82,8 +83,6 @@ def render_admin_matches_fragment():
                     for idx, seat in enumerate(seat_participants, start=1):
                         seat_dict = dict(seat)
                         part_id = seat_dict.get('participant_id', seat_dict.get('id', idx))
-                        
-                        # Fallback guard: guarantee a numeric seat position even if DB row has NULL
                         s_pos = seat_dict.get('seat_position') or seat_dict.get('seat_number') or seat_dict.get('seat') or idx
                         p_id = seat_dict.get('player_id')
                         d_id = seat_dict.get('deck_id')
@@ -98,10 +97,10 @@ def render_admin_matches_fragment():
                             player_names = list(player_dict.keys())
                             p_idx = player_names.index(curr_p_name) if curr_p_name in player_names else 0
                             
-                            new_seat_player = st.selectbox("Player", player_names, index=p_idx, key=f"edit_p_seat_{part_id}_{idx}")
+                            new_seat_player = st.selectbox("Player", player_names, index=p_idx, key=f"edit_p_seat_g{game_to_edit_id}_{part_id}_{idx}")
                             new_seat_player_id = player_dict[new_seat_player]
 
-                            edit_borrowing = st.checkbox("🎁 Was this a borrowed deck?", value=is_currently_borrowed, key=f"edit_borrow_chk_{part_id}_{idx}")
+                            edit_borrowing = st.checkbox("🎁 Was this a borrowed deck?", value=is_currently_borrowed, key=f"edit_borrow_chk_g{game_to_edit_id}_{part_id}_{idx}")
 
                             if edit_borrowing:
                                 global_deck_dict = {f"{d['deck_name']} (Owner: {d['owner_name']})": d['deck_id'] for d in all_global_decks}
@@ -109,7 +108,7 @@ def render_admin_matches_fragment():
                                 g_keys = list(global_deck_dict.keys())
                                 g_idx = g_keys.index(curr_deck_label) if curr_deck_label in g_keys else 0
 
-                                selected_deck_label = st.selectbox("Borrowed Deck", g_keys, index=g_idx, key=f"edit_d_global_{part_id}_{idx}")
+                                selected_deck_label = st.selectbox("Borrowed Deck", g_keys, index=g_idx, key=f"edit_d_global_g{game_to_edit_id}_{part_id}_{idx}")
                                 new_seat_deck_id = global_deck_dict[selected_deck_label]
                             else:
                                 player_decks = db.fetch_player_decks(new_seat_player_id)
@@ -118,7 +117,7 @@ def render_admin_matches_fragment():
                                     p_deck_names = list(p_deck_dict.keys())
                                     d_idx = p_deck_names.index(curr_deck_name) if curr_deck_name in p_deck_names else 0
 
-                                    selected_deck_name = st.selectbox("Owned Deck", p_deck_names, index=d_idx, key=f"edit_d_owned_{part_id}_{idx}")
+                                    selected_deck_name = st.selectbox("Owned Deck", p_deck_names, index=d_idx, key=f"edit_d_owned_g{game_to_edit_id}_{part_id}_{idx}")
                                     new_seat_deck_id = p_deck_dict[selected_deck_name]
                                 else:
                                     st.caption("⚠️ Selected player has no registered decks. Toggle 'Borrowed deck' above to pick from global list.")
@@ -126,12 +125,11 @@ def render_admin_matches_fragment():
 
                             scol1, scol2 = st.columns(2)
                             with scol1:
-                                edit_mull = st.number_input("Mulligans", 0, 7, value=int(seat_dict.get('mulligan_count', 0)), key=f"edit_mull_{part_id}_{idx}")
+                                edit_mull = st.number_input("Mulligans", 0, 7, value=int(seat_dict.get('mulligan_count', 0)), key=f"edit_mull_g{game_to_edit_id}_{part_id}_{idx}")
                             with scol2:
-                                edit_win = st.checkbox("Winner 🏆", value=bool(seat_dict.get('is_winner', False)), key=f"edit_win_{part_id}_{idx}")
+                                edit_win = st.checkbox("Winner 🏆", value=bool(seat_dict.get('is_winner', False)), key=f"edit_win_g{game_to_edit_id}_{part_id}_{idx}")
 
-                            # Feature: allow purging ghost/extra participants from the game session
-                            remove_seat = st.checkbox(f"🗑️ Remove Seat {s_pos} ({curr_p_name}) from this match", key=f"remove_seat_{part_id}_{idx}")
+                            remove_seat = st.checkbox(f"🗑️ Remove Seat {s_pos} ({curr_p_name}) from this match", key=f"remove_seat_g{game_to_edit_id}_{part_id}_{idx}")
 
                             if not remove_seat:
                                 updated_seats.append({
@@ -164,7 +162,6 @@ def render_admin_matches_fragment():
                                 participants=updated_seats
                             )
                             
-                            # Deselect the game dropdown state so the editor closes cleanly on rerun
                             select_widget_key = f"admin_select_match_edit_{filter_date}"
                             if select_widget_key in st.session_state:
                                 del st.session_state[select_widget_key]
