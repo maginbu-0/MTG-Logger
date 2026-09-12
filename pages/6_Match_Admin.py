@@ -82,7 +82,9 @@ def render_admin_matches_fragment():
                     for idx, seat in enumerate(seat_participants, start=1):
                         seat_dict = dict(seat)
                         part_id = seat_dict.get('participant_id', seat_dict.get('id', idx))
-                        s_pos = seat_dict.get('seat_number', seat_dict.get('seat_position', seat_dict.get('seat', idx)))
+                        
+                        # Fallback guard: guarantee a numeric seat position even if DB row has NULL
+                        s_pos = seat_dict.get('seat_position') or seat_dict.get('seat_number') or seat_dict.get('seat') or idx
                         p_id = seat_dict.get('player_id')
                         d_id = seat_dict.get('deck_id')
                         
@@ -128,22 +130,28 @@ def render_admin_matches_fragment():
                             with scol2:
                                 edit_win = st.checkbox("Winner 🏆", value=bool(seat_dict.get('is_winner', False)), key=f"edit_win_{part_id}_{idx}")
 
-                            updated_seats.append({
-                                "seat_position": s_pos,
-                                "player_id": new_seat_player_id,
-                                "deck_id": new_seat_deck_id,
-                                "mulligan_count": edit_mull,
-                                "is_winner": edit_win
-                            })
+                            # Feature: allow purging ghost/extra participants from the game session
+                            remove_seat = st.checkbox(f"🗑️ Remove Seat {s_pos} ({curr_p_name}) from this match", key=f"remove_seat_{part_id}_{idx}")
+
+                            if not remove_seat:
+                                updated_seats.append({
+                                    "seat_position": s_pos,
+                                    "player_id": new_seat_player_id,
+                                    "deck_id": new_seat_deck_id,
+                                    "mulligan_count": edit_mull,
+                                    "is_winner": edit_win
+                                })
 
                     if st.button("💾 Save Match Edits", type="primary", use_container_width=True, key=f"btn_save_match_edit_{game_to_edit_id}"):
                         winners_count = sum(1 for s in updated_seats if s['is_winner'])
                         missing_decks = any(s['deck_id'] is None for s in updated_seats)
                         
-                        if winners_count != 1:
+                        if len(updated_seats) < 3:
+                            st.error("A game must have at least 3 active participants.")
+                        elif winners_count != 1:
                             st.error("Please mark exactly ONE player as the winner.")
                         elif missing_decks:
-                            st.error("Please ensure a valid deck is assigned to all seats.")
+                            st.error("Please ensure a valid deck is assigned to all active seats.")
                         else:
                             db.update_full_game_match(
                                 game_id=game_to_edit_id,
@@ -156,7 +164,7 @@ def render_admin_matches_fragment():
                                 participants=updated_seats
                             )
                             
-                            # Deselect the game dropdown state so the editor closes on rerun
+                            # Deselect the game dropdown state so the editor closes cleanly on rerun
                             select_widget_key = f"admin_select_match_edit_{filter_date}"
                             if select_widget_key in st.session_state:
                                 del st.session_state[select_widget_key]
