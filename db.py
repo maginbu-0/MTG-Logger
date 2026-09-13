@@ -191,36 +191,14 @@ def fetch_games_by_date(selected_date):
         FROM games g
         JOIN game_participants gp ON g.game_id = gp.game_id
         JOIN players p ON gp.player_id = p.player_id
-        WHERE TO_CHAR(g.played_at AT TIME ZONE 'America/Santo_Domingo', 'YYYY-MM-DD') = %s
-        GROUP BY g.game_id, g.total_turns, g.duration_minutes, g.win_condition, g.bracket, g.medium, g.notes
-        ORDER BY g.game_id DESC;
-    """
-    query_fallback = """
-        SELECT 
-            g.game_id,
-            g.total_turns,
-            g.duration_minutes,
-            g.win_condition,
-            g.bracket,
-            g.medium,
-            COALESCE(g.notes, '') AS notes,
-            STRING_AGG(p.display_name, ', ' ORDER BY gp.seat_position) AS participants
-        FROM games g
-        JOIN game_participants gp ON g.game_id = gp.game_id
-        JOIN players p ON gp.player_id = p.player_id
-        WHERE TO_CHAR(g.played_at - INTERVAL '4 hours', 'YYYY-MM-DD') = %s
+        WHERE g.played_at::date = %s::date
         GROUP BY g.game_id, g.total_turns, g.duration_minutes, g.win_condition, g.bracket, g.medium, g.notes
         ORDER BY g.game_id DESC;
     """
     with get_db() as conn:
         cur = conn.cursor()
-        try:
-            cur.execute(query, (date_str,))
-            return cur.fetchall()
-        except Exception:
-            conn.rollback()
-            cur.execute(query_fallback, (date_str,))
-            return cur.fetchall()
+        cur.execute(query, (date_str,))
+        return cur.fetchall()
 
 @st.cache_data(ttl=300)
 def fetch_daily_session_summary(selected_date):
@@ -228,7 +206,7 @@ def fetch_daily_session_summary(selected_date):
     with get_db() as conn:
         cur = conn.cursor()
         
-        # 1. OVERVIEW QUERY (Strictly count distinct game IDs from games table)
+        # 1. OVERVIEW QUERY (Strictly count distinct game IDs from games table matching calendar date)
         query_overview = """
             SELECT 
                 COUNT(g.game_id) AS total_games,
@@ -236,7 +214,7 @@ def fetch_daily_session_summary(selected_date):
                 ROUND(AVG(g.duration_minutes), 0) AS avg_duration,
                 COALESCE(SUM(g.duration_minutes), 0) AS total_playtime
             FROM games g
-            WHERE TO_CHAR(g.played_at AT TIME ZONE 'America/Santo_Domingo', 'YYYY-MM-DD') = %s;
+            WHERE g.played_at::date = %s::date;
         """
         cur.execute(query_overview, (date_str,))
         overview = cur.fetchone()
@@ -254,7 +232,7 @@ def fetch_daily_session_summary(selected_date):
             FROM game_participants gp
             JOIN games g ON gp.game_id = g.game_id
             JOIN players p ON gp.player_id = p.player_id
-            WHERE TO_CHAR(g.played_at AT TIME ZONE 'America/Santo_Domingo', 'YYYY-MM-DD') = %s
+            WHERE g.played_at::date = %s::date
             GROUP BY p.player_id, p.display_name
             ORDER BY wins DESC, games_played ASC;
         """
@@ -273,7 +251,7 @@ def fetch_daily_session_summary(selected_date):
             JOIN games g ON gp.game_id = g.game_id
             JOIN decks d ON gp.deck_id = d.deck_id
             JOIN players p ON gp.player_id = p.player_id
-            WHERE TO_CHAR(g.played_at AT TIME ZONE 'America/Santo_Domingo', 'YYYY-MM-DD') = %s
+            WHERE g.played_at::date = %s::date
             GROUP BY d.deck_id, d.deck_name, p.display_name
             ORDER BY wins DESC, games_played ASC;
         """
@@ -554,7 +532,7 @@ def log_game_session(game_data, participants, match_date=None):
     if match_date:
         query_game = """
             INSERT INTO games (total_turns, duration_minutes, win_condition, notes, bracket, medium, played_at) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s::timestamp + TIME '20:00:00') 
+            VALUES (%s, %s, %s, %s, %s, %s, %s::timestamp + TIME '12:00:00') 
             RETURNING game_id;
         """
         query_game_fallback = """
@@ -565,7 +543,7 @@ def log_game_session(game_data, participants, match_date=None):
     else:
         query_game = """
             INSERT INTO games (total_turns, duration_minutes, win_condition, notes, bracket, medium, played_at) 
-            VALUES (%s, %s, %s, %s, %s, %s, NOW() - INTERVAL '4 hours') 
+            VALUES (%s, %s, %s, %s, %s, %s, NOW()) 
             RETURNING game_id;
         """
         query_game_fallback = """
@@ -874,24 +852,14 @@ def fetch_monthly_session_summary(year: int, month: int):
                 ROUND(AVG(g.duration_minutes), 0) AS avg_duration,
                 COALESCE(SUM(g.duration_minutes), 0) AS total_playtime
             FROM games g
-            WHERE TO_CHAR(g.played_at AT TIME ZONE 'America/Santo_Domingo', 'YYYY-MM') = %s;
-        """
-        query_overview_fallback = """
-            SELECT 
-                COUNT(DISTINCT g.game_id) AS total_games,
-                ROUND(AVG(g.total_turns), 1) AS avg_turns,
-                ROUND(AVG(g.duration_minutes), 0) AS avg_duration,
-                COALESCE(SUM(g.duration_minutes), 0) AS total_playtime
-            FROM games g
-            WHERE TO_CHAR(g.played_at - INTERVAL '4 hours', 'YYYY-MM') = %s;
+            WHERE TO_CHAR(g.played_at::date, 'YYYY-MM') = %s;
         """
         try:
             cur.execute(query_overview, (year_month_str,))
             overview = cur.fetchone()
         except Exception:
             conn.rollback()
-            cur.execute(query_overview_fallback, (year_month_str,))
-            overview = cur.fetchone()
+            return None
         
         if not overview or overview['total_games'] == 0 or overview['total_games'] is None:
             return None
@@ -899,13 +867,13 @@ def fetch_monthly_session_summary(year: int, month: int):
         query_players = """
             SELECT 
                 p.display_name AS player_name,
-                COUNT(gp.game_id) AS games_played,
+                COUNT(DISTINCT gp.game_id) AS games_played,
                 SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END) AS wins,
-                ROUND((SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END)::numeric / COUNT(gp.game_id)) * 100, 1) AS win_rate
+                ROUND((SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END)::numeric / COUNT(DISTINCT gp.game_id)) * 100, 1) AS win_rate
             FROM game_participants gp
             JOIN games g ON gp.game_id = g.game_id
             JOIN players p ON gp.player_id = p.player_id
-            WHERE TO_CHAR(g.played_at - INTERVAL '4 hours', 'YYYY-MM') = %s
+            WHERE TO_CHAR(g.played_at::date, 'YYYY-MM') = %s
             GROUP BY p.player_id, p.display_name
             ORDER BY wins DESC, games_played ASC;
         """
@@ -916,14 +884,14 @@ def fetch_monthly_session_summary(year: int, month: int):
             SELECT 
                 d.deck_name,
                 p.display_name AS owner_name,
-                COUNT(gp.game_id) AS games_played,
+                COUNT(DISTINCT gp.game_id) AS games_played,
                 SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END) AS wins,
-                ROUND((SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END)::numeric / COUNT(gp.game_id)) * 100, 1) AS win_rate
+                ROUND((SUM(CASE WHEN gp.is_winner IS TRUE THEN 1 ELSE 0 END)::numeric / COUNT(DISTINCT gp.game_id)) * 100, 1) AS win_rate
             FROM game_participants gp
             JOIN games g ON gp.game_id = g.game_id
             JOIN decks d ON gp.deck_id = d.deck_id
             JOIN players p ON gp.player_id = p.player_id
-            WHERE TO_CHAR(g.played_at - INTERVAL '4 hours', 'YYYY-MM') = %s
+            WHERE TO_CHAR(g.played_at::date, 'YYYY-MM') = %s
             GROUP BY d.deck_id, d.deck_name, p.display_name
             ORDER BY wins DESC, games_played ASC;
         """
@@ -1023,11 +991,8 @@ def revoke_device_session(token_str: str):
         except Exception:
             conn.rollback()
 
-# Add this inside db.py under Authentication & Session Management
-
 def create_session_for_user(username: str) -> str:
     """Reuses an existing token or creates a permanent (30-year) token for a user."""
-    # 1. Check for an active existing token first
     query_existing = """
         SELECT device_token 
         FROM user_sessions 
@@ -1035,7 +1000,6 @@ def create_session_for_user(username: str) -> str:
         ORDER BY created_at DESC 
         LIMIT 1;
     """
-    # 2. Insert new 30-year token if none exists
     query_new = """
         INSERT INTO user_sessions (device_token, user_role, user_name, expires_at)
         SELECT 
